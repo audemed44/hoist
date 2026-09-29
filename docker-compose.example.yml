@@ -6,7 +6,8 @@ services:
     container_name: hoist
     restart: unless-stopped
     # The user that owns your stack folders, so files Hoist writes (and git
-    # objects) stay yours. `id -u` / `id -g` on the host.
+    # objects) stay yours. `id -u` / `id -g` on the host. For a uid other
+    # than 1000 with an ssh git remote, also mount /etc/passwd:/etc/passwd:ro.
     user: "1000:1000"
     # The docker group's ID on the host (`getent group docker`), for the socket.
     group_add: ["111"]
