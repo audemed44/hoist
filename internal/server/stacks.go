@@ -1,0 +1,495 @@
+package server
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"net/http"
+	"os"
+	"slices"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/audemed44/hoist/internal/compose"
+	"github.com/audemed44/hoist/internal/config"
+	"github.com/audemed44/hoist/internal/envfile"
+	"github.com/audemed44/hoist/internal/gitrepo"
+	"github.com/audemed44/hoist/internal/jobs"
+)
+
+// fetchAge is how stale the remote-tracking branch may get before a page
+// load fetches again.
+const fetchAge = 2 * time.Minute
+
+// cachedServices keeps a resolved compose file until it or .env changes;
+// resolving runs compose twice, which takes a moment.
+type cachedServices struct {
+	key      string
+	services []compose.Service
+	err      error
+}
+
+func fileKey(paths ...string) string {
+	key := ""
+	for _, p := range paths {
+		if info, err := os.Stat(p); err == nil {
+			key += p + ":" + strconv.FormatInt(info.ModTime().UnixNano(), 10) + ":" + strconv.FormatInt(info.Size(), 10) + ";"
+		}
+	}
+	return key
+}
+
+func (s *Server) services(ctx context.Context, st config.Stack) ([]compose.Service, error) {
+	key := fileKey(st.ComposePath(), st.EnvPath())
+	s.mu.Lock()
+	c, ok := s.plans[st.Name]
+	s.mu.Unlock()
+	if ok && c.key == key {
+		return c.services, c.err
+	}
+	svcs, err := compose.Services(ctx, st)
+	s.mu.Lock()
+	s.plans[st.Name] = cachedServices{key: key, services: svcs, err: err}
+	s.mu.Unlock()
+	return svcs, err
+}
+
+type Counts struct {
+	Services int `json:"services"`
+	Running  int `json:"running"`
+	Pending  int `json:"pending"` // services a deploy would change
+}
+
+type StackInfo struct {
+	Name     string                 `json:"name"`
+	Path     string                 `json:"path"`
+	File     string                 `json:"file"`
+	Project  string                 `json:"project"`
+	Self     bool                   `json:"self"`
+	Counts   Counts                 `json:"counts"`
+	Services []compose.ServiceState `json:"services"`
+	// Error is why the compose file couldn't be resolved.
+	Error    string          `json:"error,omitempty"`
+	Git      *gitrepo.Status `json:"git,omitempty"`
+	GitError string          `json:"git_error,omitempty"`
+	Active   *jobs.Job       `json:"active,omitempty"`
+	Last     *jobs.Job       `json:"last,omitempty"`
+}
+
+func (s *Server) stackInfo(ctx context.Context, st config.Stack, fetch bool) StackInfo {
+	info := StackInfo{Name: st.Name, Path: st.Path, File: st.File, Project: st.Project, Self: s.isSelf(st)}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		repo, err := gitrepo.Open(ctx, st.Path)
+		if err != nil {
+			info.GitError = err.Error()
+			return
+		}
+		if repo == nil {
+			return
+		}
+		age := time.Duration(0)
+		if fetch {
+			age = fetchAge
+		}
+		status, err := repo.Status(ctx, st.ComposePath(), age)
+		if err != nil {
+			info.GitError = err.Error()
+			return
+		}
+		info.Git = &status
+	}()
+	svcs, err := s.services(ctx, st)
+	containers, cerr := s.Docker.Project(ctx, st.Project)
+	switch {
+	case err != nil:
+		info.Error = err.Error()
+	case cerr != nil:
+		info.Error = "docker: " + cerr.Error()
+	default:
+		info.Services = compose.Plan(svcs, containers, st.ShouldRemoveOrphans())
+	}
+	if info.Services == nil {
+		info.Services = []compose.ServiceState{}
+	}
+	for _, svc := range info.Services {
+		if svc.Change != compose.Unchanged {
+			info.Counts.Pending++
+		}
+		if svc.Orphan {
+			continue
+		}
+		info.Counts.Services++
+		if svc.Container != nil && svc.Container.State == "running" {
+			info.Counts.Running++
+		}
+	}
+	info.Active = s.active(st.Name)
+	info.Last = s.Jobs.Latest(st.Name)
+	wg.Wait()
+	return info
+}
+
+func (s *Server) listStacks(w http.ResponseWriter, r *http.Request) {
+	out := make([]StackInfo, len(s.Config.Stacks))
+	var wg sync.WaitGroup
+	for i, st := range s.Config.Stacks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out[i] = s.stackInfo(r.Context(), st, true)
+		}()
+	}
+	wg.Wait()
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) getStack(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.stack(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.stackInfo(r.Context(), st, true))
+}
+
+func contentHash(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+type composeFile struct {
+	Content string `json:"content"`
+	Hash    string `json:"hash"`
+}
+
+func (s *Server) getCompose(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.stack(w, r)
+	if !ok {
+		return
+	}
+	data, err := os.ReadFile(st.ComposePath())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, composeFile{Content: string(data), Hash: contentHash(data)})
+}
+
+const maxCompose = 1 << 20
+
+// checkCompose validates an edit and suggests a commit message for it.
+func (s *Server) checkCompose(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.stack(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Content string `json:"content"`
+	}
+	if !readJSON(w, r, maxCompose, &body) {
+		return
+	}
+	current, _ := os.ReadFile(st.ComposePath())
+	resp := map[string]string{"message": compose.Summary(st.Name, current, []byte(body.Content))}
+	if err := compose.Validate(r.Context(), st, []byte(body.Content)); err != nil {
+		resp["error"] = err.Error()
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+type saveResult struct {
+	Hash      string    `json:"hash"`
+	Commit    string    `json:"commit,omitempty"`
+	Pushed    bool      `json:"pushed"`
+	PushError string    `json:"push_error,omitempty"`
+	Job       *jobs.Job `json:"job,omitempty"`
+}
+
+func (s *Server) putCompose(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.stack(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Content string `json:"content"`
+		// Base is the hash of the file the edit started from.
+		Base    string `json:"base"`
+		Message string `json:"message"`
+		Deploy  bool   `json:"deploy"`
+	}
+	if !readJSON(w, r, maxCompose, &body) {
+		return
+	}
+	current, err := os.ReadFile(st.ComposePath())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if body.Base != "" && body.Base != contentHash(current) {
+		writeError(w, http.StatusConflict, "the compose file changed since you opened it; reload to see the new version")
+		return
+	}
+	content := []byte(body.Content)
+	if err := compose.Validate(r.Context(), st, content); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	message := body.Message
+	if message == "" {
+		message = compose.Summary(st.Name, current, content)
+	}
+	if err := envfile.WriteAtomic(st.ComposePath(), content, 0o644); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	res := saveResult{Hash: contentHash(content)}
+	if err := s.commit(r.Context(), st, message, &res); err != nil {
+		writeError(w, http.StatusInternalServerError, "saved, but the commit failed: "+err.Error())
+		return
+	}
+	if body.Deploy {
+		job, status, err := s.startDeploy(st, nil, "ui", res.Commit)
+		if err != nil {
+			writeError(w, status, "saved, but the deploy didn't start: "+err.Error())
+			return
+		}
+		res.Job = job
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// commit records the compose file in git (and pushes) when the stack lives
+// in a repo; otherwise it does nothing.
+func (s *Server) commit(ctx context.Context, st config.Stack, message string, res *saveResult) error {
+	repo, err := gitrepo.Open(ctx, st.Path)
+	if err != nil || repo == nil {
+		return err
+	}
+	author := gitrepo.Author{Name: s.Config.Git.Name, Email: s.Config.Git.Email}
+	hash, err := repo.Commit(ctx, st.ComposePath(), message, author)
+	if errors.Is(err, gitrepo.ErrNothingToCommit) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	res.Commit = hash
+	if s.Config.Git.ShouldPush() {
+		if err := repo.Push(ctx); err != nil {
+			res.PushError = err.Error()
+		} else {
+			res.Pushed = true
+		}
+	}
+	return nil
+}
+
+type envEntry struct {
+	Key string `json:"key"`
+	Set bool   `json:"set"` // has a non-empty value
+}
+
+type envResponse struct {
+	Exists  bool       `json:"exists"`
+	Entries []envEntry `json:"entries"`
+	// Missing are used by the compose file without a default, but not set.
+	Missing []string `json:"missing"`
+	// Unused aren't referenced by the compose file (they may still be read
+	// through env_file).
+	Unused []string `json:"unused"`
+}
+
+// getEnv lists the .env keys. Values stay on the server until asked for one
+// at a time.
+func (s *Server) getEnv(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.stack(w, r)
+	if !ok {
+		return
+	}
+	f, err := envfile.Read(st.EnvPath())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_, statErr := os.Stat(st.EnvPath())
+	resp := envResponse{Exists: statErr == nil, Entries: []envEntry{}, Missing: []string{}, Unused: []string{}}
+	seen := map[string]bool{}
+	for _, k := range f.Keys() {
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		v, _ := f.Get(k)
+		resp.Entries = append(resp.Entries, envEntry{Key: k, Set: v != "" && v != `""` && v != "''"})
+	}
+	if data, err := os.ReadFile(st.ComposePath()); err == nil {
+		all, required := envfile.Refs(data)
+		for _, k := range required {
+			if !seen[k] {
+				resp.Missing = append(resp.Missing, k)
+			}
+		}
+		for _, e := range resp.Entries {
+			if !slices.Contains(all, e.Key) {
+				resp.Unused = append(resp.Unused, e.Key)
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) getEnvValue(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.stack(w, r)
+	if !ok {
+		return
+	}
+	f, err := envfile.Read(st.EnvPath())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	v, ok := f.Get(r.PathValue("key"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "no such variable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"value": v})
+}
+
+func (s *Server) putEnv(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.stack(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Entries []envfile.Change `json:"entries"`
+	}
+	if !readJSON(w, r, 256<<10, &body) {
+		return
+	}
+	f, err := envfile.Read(st.EnvPath())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := f.Apply(body.Entries); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	if err := f.Write(st.EnvPath()); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.getEnv(w, r)
+}
+
+func (s *Server) repo(w http.ResponseWriter, r *http.Request, st config.Stack) *gitrepo.Repo {
+	repo, err := gitrepo.Open(r.Context(), st.Path)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return nil
+	}
+	if repo == nil {
+		writeError(w, http.StatusNotFound, "this stack isn't in a git repo")
+	}
+	return repo
+}
+
+func (s *Server) getHistory(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.stack(w, r)
+	if !ok {
+		return
+	}
+	repo := s.repo(w, r, st)
+	if repo == nil {
+		return
+	}
+	commits, err := repo.Log(r.Context(), st.ComposePath(), 100)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, commits)
+}
+
+func (s *Server) getHistoryFile(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.stack(w, r)
+	if !ok {
+		return
+	}
+	repo := s.repo(w, r, st)
+	if repo == nil {
+		return
+	}
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		path, _ = repo.Rel(st.ComposePath())
+	}
+	data, err := repo.Show(r.Context(), r.PathValue("hash"), path)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, composeFile{Content: string(data), Hash: contentHash(data)})
+}
+
+func (s *Server) gitFetch(w http.ResponseWriter, r *http.Request) {
+	s.gitAction(w, r, func(ctx context.Context, repo *gitrepo.Repo, _ config.Stack) error { return repo.Fetch(ctx) })
+}
+
+func (s *Server) gitPull(w http.ResponseWriter, r *http.Request) {
+	s.gitAction(w, r, func(ctx context.Context, repo *gitrepo.Repo, _ config.Stack) error { return repo.Pull(ctx) })
+}
+
+func (s *Server) gitPush(w http.ResponseWriter, r *http.Request) {
+	s.gitAction(w, r, func(ctx context.Context, repo *gitrepo.Repo, _ config.Stack) error { return repo.Push(ctx) })
+}
+
+// gitCommit commits a compose file edited outside Hoist.
+func (s *Server) gitCommit(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Message string `json:"message"`
+	}
+	if !readJSON(w, r, 4<<10, &body) {
+		return
+	}
+	s.gitAction(w, r, func(ctx context.Context, repo *gitrepo.Repo, st config.Stack) error {
+		msg := body.Message
+		if msg == "" {
+			msg = st.Name + ": update compose file"
+		}
+		author := gitrepo.Author{Name: s.Config.Git.Name, Email: s.Config.Git.Email}
+		if _, err := repo.Commit(ctx, st.ComposePath(), msg, author); err != nil {
+			return err
+		}
+		if s.Config.Git.ShouldPush() {
+			return repo.Push(ctx)
+		}
+		return nil
+	})
+}
+
+func (s *Server) gitAction(w http.ResponseWriter, r *http.Request, fn func(context.Context, *gitrepo.Repo, config.Stack) error) {
+	st, ok := s.stack(w, r)
+	if !ok {
+		return
+	}
+	repo := s.repo(w, r, st)
+	if repo == nil {
+		return
+	}
+	if err := fn(r.Context(), repo, st); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	status, err := repo.Status(r.Context(), st.ComposePath(), 0)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
