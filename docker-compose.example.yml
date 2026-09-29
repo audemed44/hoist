@@ -1,0 +1,26 @@
+# Hoist runs in its own stack, next to the stacks it manages, so deploying
+# them never restarts Hoist mid-deploy. Put this in e.g. ~/homelab/hoist/.
+services:
+  hoist:
+    image: ghcr.io/audemed44/hoist:latest
+    container_name: hoist
+    restart: unless-stopped
+    # The user that owns your stack folders, so files Hoist writes (and git
+    # objects) stay yours. `id -u` / `id -g` on the host.
+    user: "1000:1000"
+    # The docker group's ID on the host (`getent group docker`), for the socket.
+    group_add: ["111"]
+    environment:
+      # openssl rand -hex 24
+      - HOIST_TOKEN=${HOIST_TOKEN}
+      - TZ=Europe/London
+      # Uncomment to look around without being able to save or deploy.
+      # - HOIST_READ_ONLY=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount your stacks at the SAME path as on the host: compose resolves
+      # relative bind mounts (./data) against it.
+      - /home/you/homelab:/home/you/homelab
+      - ./config:/config
+    ports:
+      - "9130:8080"
