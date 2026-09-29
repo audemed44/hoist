@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 	_ "time/tzdata" // the runtime image may have no zoneinfo; TZ needs this
@@ -66,6 +68,7 @@ func main() {
 		os.Exit(1)
 	}
 	store.Recover(server.HelperAlive(dock))
+	warnNoUser()
 
 	dist, err := fs.Sub(web.Dist, "dist")
 	if err != nil {
@@ -122,6 +125,17 @@ func runJob(cfg *config.Config, dock *docker.Client, store *jobs.Store, id strin
 		return 1
 	}
 	return 0
+}
+
+// warnNoUser explains the one thing that breaks when Hoist runs as a uid the
+// image doesn't know: ssh (git over ssh) refuses to start.
+func warnNoUser() {
+	uid := os.Getuid()
+	if _, err := user.LookupId(strconv.Itoa(uid)); err == nil {
+		return
+	}
+	slog.Warn("no passwd entry for this uid, so git over ssh won't work; run as 1000 or mount /etc/passwd:/etc/passwd:ro",
+		"uid", uid)
 }
 
 func healthcheck() int {

@@ -33,6 +33,8 @@ RUN apk add --no-cache git openssh-client ca-certificates tzdata \
     && rm /tmp/compose.sha256 \
     # The stack folders belong to the host user; don't let git balk at that.
     && git config --system safe.directory '*' \
+    # ssh won't run for a uid without a passwd entry; 1000 is the usual one.
+    && adduser -D -H -u 1000 -h /tmp -s /sbin/nologin hoist \
     && mkdir -p /config && chown 1000:1000 /config
 COPY --from=server /hoist /hoist
 ENV HOIST_CONFIG_DIR=/config \

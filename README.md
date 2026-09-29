@@ -58,7 +58,8 @@ stacks:
   With the wrong name compose treats the running containers as someone else's.
 - Git is optional per stack: if the folder is in a git work tree, edits are
   committed there (the repo can hold several stacks). Pushing uses the
-  remote as configured in that repo, e.g. a token in an `https://` URL.
+  remote as configured in that repo: a token in an `https://` URL, or ssh
+  with a deploy key (below).
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org),
   scoped to the stack: Hoist suggests `feat(main-stack): add romm` when a
   service is added and `chore(main-stack): bump shelfloom 0.4 → 0.5` for
@@ -68,6 +69,23 @@ stacks:
   of git.
 
 Then open Hoist and sign in with `HOIST_TOKEN`.
+
+### Pushing with a deploy key
+
+A deploy key can only write to the one repo, unlike a personal token:
+
+```sh
+mkdir -p config/ssh && ssh-keygen -t ed25519 -N '' -f config/ssh/id_ed25519
+ssh-keyscan -t ed25519 github.com > config/ssh/known_hosts   # check it against GitHub's published fingerprint
+gh repo deploy-key add config/ssh/id_ed25519.pub --repo you/stacks --allow-write
+```
+
+Set the repo's remote to `git@github.com:you/stacks.git`, and give Hoist:
+
+```yaml
+    environment:
+      - GIT_SSH_COMMAND=ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o IdentitiesOnly=yes
+```
 
 | Variable | Default | |
 |---|---|---|
