@@ -13,7 +13,9 @@ services:
     environment:
       # openssl rand -hex 24
       - HOIST_TOKEN=${HOIST_TOKEN}
-      - TZ=Europe/London
+      # Your home folder on the host, for `~/` in compose files.
+      - HOIST_HOST_HOME=/home/you
+      - TZ=Europe/London   # Hoist's own clock; stacks use their .env
       # Uncomment to look around without being able to save or deploy.
       # - HOIST_READ_ONLY=true
     volumes:

@@ -2,6 +2,7 @@ package compose
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/audemed44/hoist/internal/docker"
@@ -128,6 +129,25 @@ func TestConventional(t *testing.T) {
 	} {
 		if got := Conventional(msg); got != want {
 			t.Errorf("Conventional(%q) = %v", msg, got)
+		}
+	}
+}
+
+func TestEnvironKeepsHoistSettingsOut(t *testing.T) {
+	t.Setenv("HOME", "/tmp")
+	t.Setenv("HOIST_HOST_HOME", "/home/u")
+	t.Setenv("HOIST_TOKEN", "secret")
+	t.Setenv("TZ", "Europe/London")
+	t.Setenv("DOCKER_HOST", "unix:///x.sock")
+	env := environ()
+	for _, bad := range []string{"HOIST_TOKEN=secret", "TZ=Europe/London", "HOME=/tmp"} {
+		if slices.Contains(env, bad) {
+			t.Errorf("environ passes %s", bad)
+		}
+	}
+	for _, want := range []string{"HOME=/home/u", "DOCKER_HOST=unix:///x.sock"} {
+		if !slices.Contains(env, want) {
+			t.Errorf("environ lacks %s: %v", want, env)
 		}
 	}
 }

@@ -30,11 +30,18 @@ func baseArgs(s config.Stack, file string) []string {
 	return []string{"--project-name", s.Project, "--file", file, "--project-directory", s.Path, "--ansi", "never"}
 }
 
-// environ is what compose sees besides .env. Hoist's own settings (the API
-// token) stay out, so a compose file can't interpolate them.
+// environ is what compose sees besides .env. Compose lets these override
+// .env when it interpolates ${VARS}, so only what compose itself needs goes
+// in: not Hoist's token, and not its TZ (a stack's .env may set another).
+// HOME is the host user's (HOIST_HOST_HOME), so `~/` in a compose file
+// resolves to the same folder as when the stack was deployed from a shell.
 func environ() []string {
-	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME")}
-	for _, k := range []string{"DOCKER_HOST", "DOCKER_CONFIG", "TZ"} {
+	home := os.Getenv("HOIST_HOST_HOME")
+	if home == "" {
+		home = os.Getenv("HOME")
+	}
+	env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home}
+	for _, k := range []string{"DOCKER_HOST", "DOCKER_CONFIG"} {
 		if v, ok := os.LookupEnv(k); ok {
 			env = append(env, k+"="+v)
 		}

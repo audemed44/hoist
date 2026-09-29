@@ -76,6 +76,7 @@ Then open Hoist and sign in with `HOIST_TOKEN`.
 | `HOIST_PORT` | `8080` | |
 | `HOIST_CONFIG_DIR` | `/config` | `hoist.yaml` and the deploy logs (`jobs/`) |
 | `HOIST_COMPOSE` | `docker-compose` | Compose binary |
+| `HOIST_HOST_HOME` | `$HOME` | Your home folder on the host; compose expands `~/` in bind mounts with it |
 
 **Keep compose in step with the host.** The image ships docker compose
 5.5.1. Compose decides whether to recreate a container by comparing a hash
@@ -95,7 +96,9 @@ root on the host. So:
 - Browsers can't make changes from another origin, including other
   subdomains of your domain.
 - The compose commands don't see Hoist's own environment, so a compose file
-  can't read the token through `${HOIST_TOKEN}`.
+  can't read the token through `${HOIST_TOKEN}`. (Nor Hoist's `TZ`: shell
+  variables override `.env` in compose, so passing them on would change
+  stacks.)
 
 ## Foyer
 
