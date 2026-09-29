@@ -28,7 +28,7 @@ services:
     image: yamtrack
   foyer:
     image: ghcr.io/audemed44/foyer:latest
-`, "main-stack: shelfloom 0.4 → 0.5"},
+`, "chore(main-stack): bump shelfloom 0.4 → 0.5"},
 		"add remove update": {`
 services:
   shelfloom:
@@ -38,7 +38,7 @@ services:
     image: rommapp/romm
   foyer:
     image: ghcr.io/audemed44/foyer:latest
-`, "main-stack: add romm, remove yamtrack, update shelfloom"},
+`, "feat(main-stack): add romm, remove yamtrack, update shelfloom"},
 		"other repo": {`
 services:
   shelfloom:
@@ -48,9 +48,9 @@ services:
     image: ghcr.io/fuzzygrim/yamtrack
   foyer:
     image: ghcr.io/audemed44/foyer:latest
-`, "main-stack: yamtrack yamtrack → ghcr.io/fuzzygrim/yamtrack"},
-		"no service change": {base + "\nvolumes: {data: {}}\n", "main-stack: update compose file"},
-		"invalid yaml":      {"services: [", "main-stack: update compose file"},
+`, "chore(main-stack): bump yamtrack yamtrack → ghcr.io/fuzzygrim/yamtrack"},
+		"no service change": {base + "\nvolumes: {data: {}}\n", "chore(main-stack): update compose file"},
+		"invalid yaml":      {"services: [", "chore(main-stack): update compose file"},
 		"many": {`
 services:
   a: {image: a}
@@ -58,7 +58,7 @@ services:
   c: {image: c}
   d: {image: d}
   e: {image: e}
-`, "main-stack: add a, add b, add c and 5 more"},
+`, "feat(main-stack): add a, add b, add c and 5 more"},
 	}
 	for name, c := range cases {
 		if got := Summary("main-stack", []byte(base), []byte(c.after)); got != c.want {
@@ -110,5 +110,24 @@ func TestPlan(t *testing.T) {
 	want["gone"] = Unchanged
 	if got := changes(Plan(services, containers, false)); !reflect.DeepEqual(got, want) {
 		t.Errorf("plan without orphan removal = %v", got)
+	}
+}
+
+func TestConventional(t *testing.T) {
+	for msg, want := range map[string]bool{
+		"feat(main-stack): add romm":               true,
+		"chore: tidy":                              true,
+		"fix(kopia)!: move the repository\n\nbody": true,
+		"refactor(a/b.c): x":                       true,
+		"main-stack: add romm":                     false,
+		"Feat(x): y":                               false,
+		"feat(x):y":                                false,
+		"feat(Main): y":                            false,
+		"wip":                                      false,
+		"":                                         false,
+	} {
+		if got := Conventional(msg); got != want {
+			t.Errorf("Conventional(%q) = %v", msg, got)
+		}
 	}
 }

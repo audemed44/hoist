@@ -8,7 +8,7 @@ import {
 import { useState } from "preact/hooks";
 import { api } from "../api";
 import { useData } from "../hooks";
-import { ago, gitLabel, jobSummary } from "../lib";
+import { ago, gitLabel, jobSummary, messageProblem } from "../lib";
 import { href, type Tab, TABS } from "../router";
 import type { StackInfo } from "../types";
 import { ComposeTab } from "./ComposeTab";
@@ -221,7 +221,8 @@ function GitBar(props: {
 }
 
 function CommitDialog(props: { stack: string; onClose: () => void; onDone: () => void }) {
-  const [message, setMessage] = useState(`${props.stack}: update compose file`);
+  const [message, setMessage] = useState(`chore(${props.stack}): update compose file`);
+  const problem = messageProblem(message);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async () => {
@@ -244,7 +245,7 @@ function CommitDialog(props: { stack: string; onClose: () => void; onDone: () =>
           <button class="btn btn-ghost" onClick={props.onClose}>
             Cancel
           </button>
-          <button class="btn btn-primary" disabled={busy || !message.trim()} onClick={submit}>
+          <button class="btn btn-primary" disabled={busy || !!problem} onClick={submit}>
             Commit and push
           </button>
         </>
@@ -260,6 +261,7 @@ function CommitDialog(props: { stack: string; onClose: () => void; onDone: () =>
         onInput={(e) => setMessage(e.currentTarget.value)}
         aria-label="Commit message"
       />
+      {problem && <div class="field-hint tone-warn">{problem}</div>}
       {error && <div class="form-error">{error}</div>}
     </Dialog>
   );

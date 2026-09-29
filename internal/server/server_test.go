@@ -245,8 +245,12 @@ func TestSaveCompose(t *testing.T) {
 
 	next := "services:\n  web:\n    image: nginx:1.27\n"
 	check := decode[map[string]string](t, e.do("POST", "/api/stacks/main-stack/check", body(next, "")))
-	if check["message"] != "main-stack: web latest → 1.27" || check["error"] != "" {
+	if check["message"] != "chore(main-stack): bump web latest → 1.27" || check["error"] != "" {
 		t.Errorf("check = %v", check)
+	}
+	bad, _ := json.Marshal(map[string]string{"content": next, "base": cur.Hash, "message": "bump nginx"})
+	if w := e.do("PUT", "/api/stacks/main-stack/compose", string(bad)); w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("non-conventional message: %d", w.Code)
 	}
 	w = e.do("PUT", "/api/stacks/main-stack/compose", body(next, cur.Hash))
 	res := decode[saveResult](t, w)
@@ -258,7 +262,7 @@ func TestSaveCompose(t *testing.T) {
 		t.Errorf("file = %q", data)
 	}
 	history := decode[[]map[string]any](t, e.do("GET", "/api/stacks/main-stack/history", ""))
-	if len(history) != 2 || history[0]["subject"] != "main-stack: web latest → 1.27" || history[0]["author"] != "Hoist" {
+	if len(history) != 2 || history[0]["subject"] != "chore(main-stack): bump web latest → 1.27" || history[0]["author"] != "Hoist" {
 		t.Errorf("history = %v", history)
 	}
 	old := decode[composeFile](t, e.do("GET", "/api/stacks/main-stack/history/"+history[1]["hash"].(string), ""))

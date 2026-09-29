@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ago, gitLabel, resultSummary } from "./lib";
+import { ago, gitLabel, isConventional, resultSummary } from "./lib";
 import { href, parseRoute } from "./router";
 import type { GitStatus } from "./types";
 
@@ -67,5 +67,14 @@ describe("routes", () => {
       tab: "services",
     });
     expect(parseRoute("/whatever")).toEqual({ page: "home" });
+  });
+});
+
+describe("isConventional", () => {
+  it("matches the server's rule", () => {
+    expect(isConventional("chore(main-stack): bump shelfloom 0.4 → 0.5")).toBe(true);
+    expect(isConventional("feat!: drop kopia")).toBe(true);
+    expect(isConventional("main-stack: bump shelfloom")).toBe(false);
+    expect(isConventional("feat(Main): x")).toBe(false);
   });
 });

@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -238,9 +239,12 @@ func (s *Server) putCompose(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	message := body.Message
+	message := strings.TrimSpace(body.Message)
 	if message == "" {
 		message = compose.Summary(st.Name, current, content)
+	}
+	if !s.messageOK(w, message) {
+		return
 	}
 	if err := envfile.WriteAtomic(st.ComposePath(), content, 0o644); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -260,6 +264,17 @@ func (s *Server) putCompose(w http.ResponseWriter, r *http.Request) {
 		res.Job = job
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// messageOK refuses a commit message that isn't a Conventional Commit, when
+// the config asks for them.
+func (s *Server) messageOK(w http.ResponseWriter, message string) bool {
+	if s.Config.Git.EnforceConventional() && !compose.Conventional(message) {
+		writeError(w, http.StatusUnprocessableEntity,
+			`commit messages must follow Conventional Commits, e.g. "chore(main-stack): bump shelfloom 0.4 → 0.5"`)
+		return false
+	}
+	return true
 }
 
 // commit records the compose file in git (and pushes) when the stack lives
@@ -457,11 +472,18 @@ func (s *Server) gitCommit(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, 4<<10, &body) {
 		return
 	}
+	st, ok := s.stack(w, r)
+	if !ok {
+		return
+	}
+	msg := strings.TrimSpace(body.Message)
+	if msg == "" {
+		msg = "chore(" + st.Name + "): update compose file"
+	}
+	if !s.messageOK(w, msg) {
+		return
+	}
 	s.gitAction(w, r, func(ctx context.Context, repo *gitrepo.Repo, st config.Stack) error {
-		msg := body.Message
-		if msg == "" {
-			msg = st.Name + ": update compose file"
-		}
 		author := gitrepo.Author{Name: s.Config.Git.Name, Email: s.Config.Git.Email}
 		if _, err := repo.Commit(ctx, st.ComposePath(), msg, author); err != nil {
 			return err

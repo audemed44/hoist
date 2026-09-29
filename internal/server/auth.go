@@ -79,10 +79,16 @@ func sameOrigin(next http.Handler) http.Handler {
 type sessionInfo struct {
 	Authenticated bool `json:"authenticated"`
 	ReadOnly      bool `json:"read_only"`
+	// Conventional is set when commit messages must be Conventional Commits.
+	Conventional bool `json:"conventional"`
+}
+
+func (s *Server) sessionInfo(authenticated bool) sessionInfo {
+	return sessionInfo{Authenticated: authenticated, ReadOnly: s.ReadOnly, Conventional: s.Config.Git.EnforceConventional()}
 }
 
 func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, sessionInfo{Authenticated: s.authenticated(r), ReadOnly: s.ReadOnly})
+	writeJSON(w, http.StatusOK, s.sessionInfo(s.authenticated(r)))
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +108,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		MaxAge: 365 * 24 * 3600, HttpOnly: true, SameSite: http.SameSiteStrictMode,
 		Secure: r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 	})
-	writeJSON(w, http.StatusOK, sessionInfo{Authenticated: true, ReadOnly: s.ReadOnly})
+	writeJSON(w, http.StatusOK, s.sessionInfo(true))
 }
 
 func (s *Server) logout(w http.ResponseWriter, _ *http.Request) {
