@@ -22,7 +22,8 @@ Config is `/config/hoist.yaml`; deploy records and logs are files in
   (bearer or the derived session cookie), and state-changing browser
   requests from another origin are refused (`sameOrigin`). Keep both for
   every new endpoint. Compose runs with a minimal environment
-  (`compose.environ`) so compose files can't read Hoist's secrets.
+  (`compose.environ`): shell variables override `.env` in interpolation, so
+  anything extra there (the token, Hoist's TZ) leaks into or changes stacks.
 - Stacks must keep their project name, folder and compose file, or compose
   won't recognise the running containers. The deploy plan compares
   `docker compose config --hash` with the containers'
