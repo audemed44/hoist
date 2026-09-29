@@ -18,9 +18,14 @@ type Git struct {
 	Email string `yaml:"email" json:"email"`
 	// Push after every commit. On by default.
 	Push *bool `yaml:"push,omitempty" json:"push"`
+	// Conventional refuses commit messages that don't follow Conventional
+	// Commits. On by default.
+	Conventional *bool `yaml:"conventional,omitempty" json:"conventional"`
 }
 
 func (g Git) ShouldPush() bool { return g.Push == nil || *g.Push }
+
+func (g Git) EnforceConventional() bool { return g.Conventional == nil || *g.Conventional }
 
 type Stack struct {
 	Name string `yaml:"name" json:"name"`

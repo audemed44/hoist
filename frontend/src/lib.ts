@@ -1,5 +1,8 @@
 import type { Change, GitStatus, Job, JobResult, StackInfo } from "./types";
 
+/** Server settings the whole UI needs; filled in from the session. */
+export const settings = { conventional: true };
+
 export function ago(iso: string | undefined, now = Date.now()): string {
   if (!iso) return "";
   const s = Math.max(0, (now - new Date(iso).getTime()) / 1000);
@@ -72,4 +75,21 @@ export function pendingText(n: number): string {
 
 export function pad(n: number): string {
   return String(n).padStart(2, "0");
+}
+
+const CONVENTIONAL =
+  /^(feat|fix|chore|docs|refactor|perf|test|build|ci|style|revert)(\([a-z0-9._/-]+\))?!?: \S/;
+
+/** Whether a commit message's first line is "<type>(<scope>): <summary>". */
+export function isConventional(message: string): boolean {
+  return CONVENTIONAL.test(message.split("\n")[0]);
+}
+
+/** Why a commit message would be refused, or "" when it's fine. */
+export function messageProblem(message: string): string {
+  if (!message.trim()) return "Write a commit message.";
+  if (settings.conventional && !isConventional(message)) {
+    return "Use Conventional Commits: <type>(<scope>): <summary>, e.g. chore(main-stack): bump shelfloom 0.4 → 0.5";
+  }
+  return "";
 }

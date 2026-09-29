@@ -1,6 +1,7 @@
 import { LogOut } from "lucide-preact";
 import { useEffect, useState } from "preact/hooks";
 import { api, setUnauthorizedHandler } from "./api";
+import { settings } from "./lib";
 import { JobPage } from "./components/JobPage";
 import { Login } from "./components/Login";
 import { StackPage } from "./components/StackPage";
@@ -23,6 +24,7 @@ export function App() {
   if (error) return <div class="boot">Can't reach Hoist: {error}</div>;
   if (!session) return <div class="boot" />;
   if (!session.authenticated) return <Login onDone={setSession} />;
+  settings.conventional = session.conventional;
   return (
     <Shell session={session} onSignOut={() => setSession({ ...session, authenticated: false })} />
   );

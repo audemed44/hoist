@@ -2,6 +2,7 @@ import { RotateCcw } from "lucide-preact";
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../api";
 import { useUnsavedWarning } from "../hooks";
+import { messageProblem } from "../lib";
 import { navigate } from "../router";
 import type { CheckResult, ComposeFile, StackInfo } from "../types";
 import { CodeEditor } from "./CodeEditor";
@@ -127,6 +128,7 @@ function ReviewDialog(props: {
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
   const inGit = !!props.stack.git;
+  const problem = inGit && check ? messageProblem(message) : "";
 
   useEffect(() => {
     api
@@ -189,7 +191,7 @@ function ReviewDialog(props: {
           ) : (
             <button
               class="btn btn-primary"
-              disabled={!check || !!check.error || busy || (inGit && !message.trim())}
+              disabled={!check || !!check.error || busy || !!problem}
               onClick={save}
             >
               {inGit ? "Commit" : "Save"}
@@ -217,6 +219,7 @@ function ReviewDialog(props: {
                 value={message}
                 onInput={(e) => setMessage(e.currentTarget.value)}
               />
+              {problem && <span class="field-hint tone-warn">{problem}</span>}
             </label>
           ) : (
             <p class="muted">This stack isn't in git, so the file is saved without history.</p>

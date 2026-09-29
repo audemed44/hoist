@@ -3,19 +3,22 @@ package compose
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// Summary writes a commit message for a compose file edit, such as
-// "main-stack: shelfloom 0.4 → 0.5" or "main-stack: add romm, remove yamtrack".
+// Summary writes a Conventional Commits message for a compose file edit,
+// scoped to the stack: "feat(main-stack): add romm" when a service is added,
+// otherwise a chore, such as "chore(main-stack): bump shelfloom 0.4 → 0.5".
 func Summary(stack string, before, after []byte) string {
+	fallback := "chore(" + stack + "): update compose file"
 	oldSvcs, errOld := services(before)
 	newSvcs, errNew := services(after)
 	if errOld != nil || errNew != nil {
-		return stack + ": update compose file"
+		return fallback
 	}
 	var parts []string
 	for _, name := range sortedKeys(newSvcs) {
@@ -34,18 +37,33 @@ func Summary(stack string, before, after []byte) string {
 			continue
 		}
 		if a, b, only := imageOnly(old, newSvcs[name]); only {
-			parts = append(parts, name+" "+a+" → "+b)
+			parts = append(parts, "bump "+name+" "+a+" → "+b)
 		} else {
 			parts = append(parts, "update "+name)
 		}
 	}
-	switch {
-	case len(parts) == 0:
-		return stack + ": update compose file"
-	case len(parts) > 4:
-		return fmt.Sprintf("%s: %s and %d more", stack, strings.Join(parts[:3], ", "), len(parts)-3)
+	if len(parts) == 0 {
+		return fallback
 	}
-	return stack + ": " + strings.Join(parts, ", ")
+	kind := "chore"
+	if strings.HasPrefix(parts[0], "add ") {
+		kind = "feat"
+	}
+	prefix := kind + "(" + stack + "): "
+	if len(parts) > 4 {
+		return fmt.Sprintf("%s%s and %d more", prefix, strings.Join(parts[:3], ", "), len(parts)-3)
+	}
+	return prefix + strings.Join(parts, ", ")
+}
+
+var conventionalRe = regexp.MustCompile(
+	`^(feat|fix|chore|docs|refactor|perf|test|build|ci|style|revert)(\([a-z0-9._/-]+\))?!?: \S`)
+
+// Conventional reports whether a commit message's first line follows
+// Conventional Commits: "<type>(<scope>): <summary>".
+func Conventional(message string) bool {
+	first, _, _ := strings.Cut(message, "\n")
+	return conventionalRe.MatchString(first)
 }
 
 func services(data []byte) (map[string]any, error) {

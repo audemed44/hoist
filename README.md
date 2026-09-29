@@ -11,8 +11,9 @@ that idles at about 4 MB of RAM. A lightweight replacement for
   live log. Only services whose config or image changed are recreated, and
   the result says which. Deploy a whole stack or a single service.
 - **Compose editor**: YAML editor, checked with `docker compose config`
-  before anything is written, a diff to review, then a commit with a message
-  written for you (`main-stack: shelfloom 0.4 → 0.5`) and a push.
+  before anything is written, a diff to review, then a commit with a
+  Conventional Commits message written for you
+  (`chore(main-stack): bump shelfloom 0.4 → 0.5`) and a push.
 - **Environment**: edit the stack's `.env` (kept out of git). Values stay on
   the server until you reveal one; variables the compose file uses but
   aren't set, and ones it doesn't use, are pointed out.
@@ -37,6 +38,7 @@ git:
   name: Hoist            # commit author
   email: hoist@example.com
   push: true             # push after each commit (default)
+  conventional: true     # require Conventional Commits messages (default)
 
 stacks:
   - name: main-stack
@@ -57,6 +59,11 @@ stacks:
 - Git is optional per stack: if the folder is in a git work tree, edits are
   committed there (the repo can hold several stacks). Pushing uses the
   remote as configured in that repo, e.g. a token in an `https://` URL.
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org),
+  scoped to the stack: Hoist suggests `feat(main-stack): add romm` when a
+  service is added and `chore(main-stack): bump shelfloom 0.4 → 0.5` for
+  image bumps and other changes, and refuses messages that don't fit unless
+  `conventional: false`.
 - `.env` in the stack folder is what compose reads for `${VARS}`. Keep it out
   of git.
 

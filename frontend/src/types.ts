@@ -112,4 +112,6 @@ export interface Commit {
 export interface Session {
   authenticated: boolean;
   read_only: boolean;
+  /** Commit messages must follow Conventional Commits. */
+  conventional: boolean;
 }
