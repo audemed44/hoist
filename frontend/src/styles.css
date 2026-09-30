@@ -1253,3 +1253,44 @@ button.chip {
 .hints summary {
   cursor: pointer;
 }
+
+/* ── Add a service ─────────────────────────────────────────────────────── */
+.lookup-row {
+  display: flex;
+  gap: 8px;
+}
+.suggestion {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line-soft);
+}
+.suggest-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.mapping {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mapping-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .suggest-fields {
+    grid-template-columns: 1fr;
+  }
+  .mapping-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .mapping-row .muted {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+}

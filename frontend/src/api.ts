@@ -7,6 +7,7 @@ import type {
   ComposeFile,
   Discovery,
   DriftInfo,
+  ServiceSuggestion,
   EnvChange,
   EnvInfo,
   GitStatus,
@@ -83,6 +84,8 @@ export const api = {
   addStack: (body: AddStack) => request<AddResult>("/api/stacks", json("POST", body)),
   stack: (name: string) => request<StackInfo>(stack(name)),
   compose: (name: string) => request<ComposeFile>(`${stack(name)}/compose`),
+  suggestService: (name: string, image: string, content: string) =>
+    request<ServiceSuggestion>(`${stack(name)}/suggest-service`, json("POST", { image, content })),
   check: (name: string, content: string) =>
     request<CheckResult>(`${stack(name)}/check`, json("POST", { content })),
   save: (name: string, body: { content: string; base: string; message: string; deploy: boolean }) =>

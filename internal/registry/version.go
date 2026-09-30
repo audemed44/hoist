@@ -107,3 +107,17 @@ func Allows(policy, bump string) bool {
 	}
 	return false
 }
+
+// Older returns the same-shaped versions among tags that are older than
+// current, newest first.
+func Older(current Version, tags []string) []Version {
+	var out []Version
+	for _, t := range tags {
+		v, ok := ParseVersion(t)
+		if ok && v.sameShape(current) && v.compare(current) < 0 {
+			out = append(out, v)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].compare(out[j]) > 0 })
+	return out
+}

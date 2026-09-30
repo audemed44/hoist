@@ -102,3 +102,46 @@ func TestClient(t *testing.T) {
 		t.Errorf("missing tag: %v", err)
 	}
 }
+
+func TestPinnable(t *testing.T) {
+	for want, tags := range map[string][]string{
+		"1.29.1":     {"latest", "1.29.1", "1.29.0", "1.28", "1.29.2-alpine", "1.30.0-rc1", "mainline", "1.27.5"},
+		"5.1.0-ls12": {"latest", "5.0.1-ls300", "5.1.0-ls12", "5.1.0-ls9", "develop"},
+		"":           {"latest", "stable"},
+		"v2.3.0":     {"v2.3.0", "v2.2.9", "v2.3.0-beta"},
+	} {
+		if got := Pinnable(tags); got != want {
+			t.Errorf("Pinnable(%v) = %q, want %q", tags, got, want)
+		}
+	}
+}
+
+func TestConfig(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/me/app/manifests/1.0":
+			fmt.Fprint(w, `{"manifests":[
+				{"digest":"sha256:arm","platform":{"os":"linux","architecture":"arm64"}},
+				{"digest":"sha256:amd","platform":{"os":"linux","architecture":"amd64"}},
+				{"digest":"sha256:att","platform":{"os":"unknown","architecture":"unknown"}}]}`)
+		case "/v2/me/app/manifests/sha256:amd", "/v2/me/app/manifests/sha256:arm":
+			fmt.Fprint(w, `{"config":{"digest":"sha256:cfg"}}`)
+		case "/v2/me/app/blobs/sha256:cfg":
+			fmt.Fprint(w, `{"config":{"ExposedPorts":{"8080/tcp":{},"443/tcp":{},"53/udp":{}},
+				"Volumes":{"/data":{},"/config":{}},"Healthcheck":{"Test":["CMD","true"]}}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	c := New()
+	c.http = srv.Client()
+	ref, _ := Parse(strings.TrimPrefix(srv.URL, "https://") + "/me/app:1.0")
+	cfg, err := c.Config(context.Background(), ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(cfg.Ports, ",") != "53/udp,443/tcp,8080/tcp" || strings.Join(cfg.Volumes, ",") != "/config,/data" || !cfg.Healthcheck {
+		t.Errorf("config = %+v", cfg)
+	}
+}

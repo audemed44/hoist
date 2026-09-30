@@ -732,3 +732,25 @@ func TestCheckHints(t *testing.T) {
 		t.Errorf("hints after saving = %+v", check.Hints)
 	}
 }
+
+func TestSuggestHelpers(t *testing.T) {
+	taken := map[string]bool{"8080/tcp": true, "8081/tcp": true, "9000/udp": true}
+	for _, tc := range []struct {
+		port  int
+		proto string
+		want  int
+	}{{80, "tcp", 8082}, {443, "tcp", 8443}, {80, "udp", 8080}, {9000, "tcp", 9000}, {9000, "udp", 9001}} {
+		if got := freePort(tc.port, tc.proto, taken); got != tc.want {
+			t.Errorf("freePort(%d/%s) = %d, want %d", tc.port, tc.proto, got, tc.want)
+		}
+	}
+	if n := serviceName("linuxserver/Sonarr"); n != "sonarr" {
+		t.Errorf("serviceName = %q", n)
+	}
+	if n := serviceName("library/it.tools"); n != "it-tools" {
+		t.Errorf("serviceName = %q", n)
+	}
+	if n := freeName("web", []compose.Service{{Name: "web"}, {Name: "web-2"}}); n != "web-3" {
+		t.Errorf("freeName = %q", n)
+	}
+}

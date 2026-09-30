@@ -17,6 +17,7 @@ import (
 	"github.com/audemed44/hoist/internal/config"
 	"github.com/audemed44/hoist/internal/docker"
 	"github.com/audemed44/hoist/internal/jobs"
+	"github.com/audemed44/hoist/internal/registry"
 	"github.com/audemed44/hoist/internal/updates"
 )
 
@@ -41,12 +42,15 @@ type Server struct {
 
 	selfOnce sync.Once
 	self     *docker.Self // nil when Hoist isn't in a container
+
+	registry *registry.Client
 }
 
 func New(o Options) *Server {
 	return &Server{
 		Options: o, session: sessionValue(o.Token),
 		starting: map[string]bool{}, plans: map[string]cachedServices{},
+		registry: registry.New(),
 	}
 }
 
@@ -59,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/stacks/{name}", s.getStack)
 	api.HandleFunc("GET /api/stacks/{name}/compose", s.getCompose)
 	api.HandleFunc("POST /api/stacks/{name}/check", s.checkCompose)
+	api.HandleFunc("POST /api/stacks/{name}/suggest-service", s.suggestService)
 	api.HandleFunc("PUT /api/stacks/{name}/compose", s.writable(s.putCompose))
 	api.HandleFunc("GET /api/stacks/{name}/env", s.getEnv)
 	api.HandleFunc("GET /api/stacks/{name}/env/{key}", s.getEnvValue)
