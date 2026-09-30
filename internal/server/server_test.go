@@ -329,3 +329,20 @@ func TestDeployAndLog(t *testing.T) {
 		t.Errorf("job = %+v", job)
 	}
 }
+
+func TestComposeLineEndings(t *testing.T) {
+	e := newEnv(t, false)
+	_ = os.WriteFile(e.stack.ComposePath(), []byte("services:\r\n  web:\r\n    image: nginx\r\n"), 0o644)
+	cur := decode[composeFile](t, e.do("GET", "/api/stacks/main-stack/compose", ""))
+	if !cur.CRLF || strings.Contains(cur.Content, "\r") {
+		t.Fatalf("editor gets %+v", cur)
+	}
+	body, _ := json.Marshal(map[string]string{"content": "services:\r\n  web:\r\n    image: nginx:1.27\r\n", "base": cur.Hash})
+	if w := e.do("PUT", "/api/stacks/main-stack/compose", string(body)); w.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", w.Code, w.Body)
+	}
+	data, _ := os.ReadFile(e.stack.ComposePath())
+	if string(data) != "services:\n  web:\n    image: nginx:1.27\n" {
+		t.Errorf("saved %q", data)
+	}
+}

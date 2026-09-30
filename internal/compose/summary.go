@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"bytes"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -64,6 +65,18 @@ var conventionalRe = regexp.MustCompile(
 func Conventional(message string) bool {
 	first, _, _ := strings.Cut(message, "\n")
 	return conventionalRe.MatchString(first)
+}
+
+// UsesCRLF reports whether a file's lines mostly end in \r\n.
+func UsesCRLF(data []byte) bool {
+	lf := bytes.Count(data, []byte("\n"))
+	return lf > 0 && bytes.Count(data, []byte("\r\n"))*2 >= lf
+}
+
+// ToLF turns \r\n line endings into \n. Hoist always writes compose files
+// with \n, whatever an editor (or Komodo's) left behind.
+func ToLF(data []byte) []byte {
+	return bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
 }
 
 func services(data []byte) (map[string]any, error) {

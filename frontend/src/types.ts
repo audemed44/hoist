@@ -72,6 +72,8 @@ export interface StackInfo {
 export interface ComposeFile {
   content: string;
   hash: string;
+  /** Stored with Windows line endings; saving converts it to LF. */
+  crlf?: boolean;
 }
 
 export interface CheckResult {
