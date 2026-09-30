@@ -62,9 +62,11 @@ func main() {
 		os.Exit(runJob(cfg, dock, store, os.Args[2]))
 	}
 
+	// Any token will do; it's yours to pick. Only an empty one is refused,
+	// since that would leave the API open.
 	token := os.Getenv("HOIST_TOKEN")
-	if len(token) < 16 {
-		slog.Error("set HOIST_TOKEN to a random secret of at least 16 characters, e.g. `openssl rand -hex 24`")
+	if token == "" {
+		slog.Error("set HOIST_TOKEN: it's what you sign in with, and what Foyer uses to deploy")
 		os.Exit(1)
 	}
 	store.Recover(server.HelperAlive(dock))

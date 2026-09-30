@@ -89,7 +89,7 @@ Set the repo's remote to `git@github.com:you/stacks.git`, and give Hoist:
 
 | Variable | Default | |
 |---|---|---|
-| `HOIST_TOKEN` | (required) | API token, at least 16 characters |
+| `HOIST_TOKEN` | (required) | What you sign in with, and Foyer's key; anything but empty |
 | `HOIST_READ_ONLY` | `false` | Show everything, change nothing |
 | `HOIST_PORT` | `8080` | |
 | `HOIST_CONFIG_DIR` | `/config` | `hoist.yaml` and the deploy logs (`jobs/`) |
