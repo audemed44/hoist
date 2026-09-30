@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/audemed44/hoist/internal/config"
@@ -81,22 +82,39 @@ func Run(ctx context.Context, s config.Stack, w io.Writer, args ...string) error
 // real one. The check runs in the stack folder, so .env, env_file and
 // relative paths resolve as they would on deploy.
 func Validate(ctx context.Context, s config.Stack, content []byte) error {
+	_, err := withTemp(ctx, s, content, "config", "--quiet")
+	return err
+}
+
+// Resolve validates content like Validate and returns its services.
+func Resolve(ctx context.Context, s config.Stack, content []byte) ([]Service, error) {
+	data, err := withTemp(ctx, s, content, "config", "--format", "json")
+	if err != nil {
+		return nil, err
+	}
+	return parseServices(data)
+}
+
+// withTemp runs compose on content saved as a temporary file in the stack
+// folder.
+func withTemp(ctx context.Context, s config.Stack, content []byte, args ...string) ([]byte, error) {
 	tmp, err := os.CreateTemp(s.Path, ".hoist-validate-*.yml")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer os.Remove(tmp.Name())
 	if _, err := tmp.Write(content); err != nil {
 		tmp.Close()
-		return err
+		return nil, err
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return nil, err
 	}
-	if _, err := output(ctx, s, tmp.Name(), "config", "--quiet"); err != nil {
-		return cleanError(err, tmp.Name(), s.File)
+	out, err := output(ctx, s, tmp.Name(), args...)
+	if err != nil {
+		return nil, cleanError(err, tmp.Name(), s.File)
 	}
-	return nil
+	return out, nil
 }
 
 // cleanError names the real compose file instead of the temp copy.
@@ -112,22 +130,75 @@ type Service struct {
 	Image         string `json:"image"`
 	ContainerName string `json:"container_name,omitempty"`
 	Hash          string `json:"-"`
+	// Ports are the host ports it publishes (ranges come expanded).
+	Ports []Port `json:"-"`
 }
 
-// Services resolves the compose file: every service, its image, and the
-// config hash compose would label a fresh container with.
+// Port is a published host port.
+type Port struct {
+	HostIP   string // "" for every address
+	Port     int
+	Protocol string // tcp | udp
+}
+
+func (p Port) String() string {
+	s := strconv.Itoa(p.Port) + "/" + p.Protocol
+	if p.HostIP != "" && p.HostIP != "0.0.0.0" && p.HostIP != "::" {
+		s = p.HostIP + ":" + s
+	}
+	return s
+}
+
+// Overlaps reports whether two published ports would clash on the host.
+func (p Port) Overlaps(q Port) bool {
+	all := func(ip string) bool { return ip == "" || ip == "0.0.0.0" || ip == "::" }
+	return p.Port == q.Port && p.Protocol == q.Protocol && (all(p.HostIP) || all(q.HostIP) || p.HostIP == q.HostIP)
+}
+
+func parseServices(data []byte) ([]Service, error) {
+	var model struct {
+		Services map[string]struct {
+			Image         string `json:"image"`
+			ContainerName string `json:"container_name"`
+			Ports         []struct {
+				HostIP    string `json:"host_ip"`
+				Published string `json:"published"`
+				Protocol  string `json:"protocol"`
+			} `json:"ports"`
+		} `json:"services"`
+	}
+	if err := json.Unmarshal(data, &model); err != nil {
+		return nil, err
+	}
+	out := make([]Service, 0, len(model.Services))
+	for name, svc := range model.Services {
+		s := Service{Name: name, Image: svc.Image, ContainerName: svc.ContainerName}
+		for _, p := range svc.Ports {
+			n, err := strconv.Atoi(p.Published)
+			if err != nil || n == 0 { // not published, or left to docker
+				continue
+			}
+			proto := p.Protocol
+			if proto == "" {
+				proto = "tcp"
+			}
+			s.Ports = append(s.Ports, Port{HostIP: p.HostIP, Port: n, Protocol: proto})
+		}
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// Services resolves the compose file: every service, its image, its ports,
+// and the config hash compose would label a fresh container with.
 func Services(ctx context.Context, s config.Stack) ([]Service, error) {
 	data, err := output(ctx, s, s.ComposePath(), "config", "--format", "json")
 	if err != nil {
 		return nil, err
 	}
-	var model struct {
-		Services map[string]struct {
-			Image         string `json:"image"`
-			ContainerName string `json:"container_name"`
-		} `json:"services"`
-	}
-	if err := json.Unmarshal(data, &model); err != nil {
+	out, err := parseServices(data)
+	if err != nil {
 		return nil, err
 	}
 	hashes, err := output(ctx, s, s.ComposePath(), "config", "--hash", "*")
@@ -141,11 +212,9 @@ func Services(ctx context.Context, s config.Stack) ([]Service, error) {
 			byName[name] = strings.TrimSpace(hash)
 		}
 	}
-	out := make([]Service, 0, len(model.Services))
-	for name, svc := range model.Services {
-		out = append(out, Service{Name: name, Image: svc.Image, ContainerName: svc.ContainerName, Hash: byName[name]})
+	for i := range out {
+		out[i].Hash = byName[out[i].Name]
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 

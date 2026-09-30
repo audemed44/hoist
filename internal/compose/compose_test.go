@@ -183,3 +183,31 @@ func TestBumpImage(t *testing.T) {
 		t.Error("WithTag with a registry port")
 	}
 }
+
+func TestParsePorts(t *testing.T) {
+	svcs, err := parseServices([]byte(`{"services":{"a":{"image":"nginx","ports":[
+		{"target":80,"published":"8080","protocol":"tcp"},
+		{"host_ip":"127.0.0.1","target":53,"published":"5353","protocol":"udp"},
+		{"target":3000}]}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ports := svcs[0].Ports
+	if len(ports) != 2 || ports[0].String() != "8080/tcp" || ports[1].String() != "127.0.0.1:5353/udp" {
+		t.Fatalf("ports = %v", ports)
+	}
+	for _, tc := range []struct {
+		a, b Port
+		want bool
+	}{
+		{Port{"", 80, "tcp"}, Port{"127.0.0.1", 80, "tcp"}, true},
+		{Port{"::", 80, "tcp"}, Port{"10.0.0.1", 80, "tcp"}, true},
+		{Port{"127.0.0.1", 80, "tcp"}, Port{"127.0.0.2", 80, "tcp"}, false},
+		{Port{"", 80, "tcp"}, Port{"", 80, "udp"}, false},
+		{Port{"", 80, "tcp"}, Port{"", 81, "tcp"}, false},
+	} {
+		if got := tc.a.Overlaps(tc.b); got != tc.want {
+			t.Errorf("%v overlaps %v = %v", tc.a, tc.b, got)
+		}
+	}
+}

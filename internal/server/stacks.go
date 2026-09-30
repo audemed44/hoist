@@ -213,7 +213,16 @@ func (s *Server) getCompose(w http.ResponseWriter, r *http.Request) {
 
 const maxCompose = 1 << 20
 
-// checkCompose validates an edit and suggests a commit message for it.
+type checkResult struct {
+	Message string `json:"message"`
+	Error   string `json:"error,omitempty"`
+	// Conflicts are host ports and container names shared with other
+	// services, stacks or containers. They don't stop a save.
+	Conflicts []conflict `json:"conflicts"`
+}
+
+// checkCompose validates an edit, looks for clashes with the rest of the
+// host, and suggests a commit message for it.
 func (s *Server) checkCompose(w http.ResponseWriter, r *http.Request) {
 	st, ok := s.stack(w, r)
 	if !ok {
@@ -226,9 +235,12 @@ func (s *Server) checkCompose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	current, _ := os.ReadFile(st.ComposePath())
-	resp := map[string]string{"message": compose.Summary(st.Name, current, []byte(body.Content))}
-	if err := compose.Validate(r.Context(), st, []byte(body.Content)); err != nil {
-		resp["error"] = err.Error()
+	resp := checkResult{Message: compose.Summary(st.Name, current, []byte(body.Content)), Conflicts: []conflict{}}
+	svcs, err := compose.Resolve(r.Context(), st, []byte(body.Content))
+	if err != nil {
+		resp.Error = err.Error()
+	} else {
+		resp.Conflicts = s.conflicts(r.Context(), st, svcs)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
