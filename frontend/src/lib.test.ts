@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ago,
   gitLabel,
+  insertService,
   isConventional,
   projectName,
   resultSummary,
@@ -117,5 +118,43 @@ describe("names", () => {
   it("derives project names like compose", () => {
     expect(projectName("/home/u/homelab/Main Stack/")).toBe("mainstack");
     expect(projectName("/srv/_romm")).toBe("romm");
+  });
+});
+
+describe("insertService", () => {
+  const svc = {
+    name: "romm",
+    image: "ghcr.io/rommapp/romm:5.3.1",
+    ports: [
+      { host: 8081, container: 8080, protocol: "tcp" },
+      { host: 5353, container: 53, protocol: "udp" },
+    ],
+    volumes: [{ host: "./romm/data", container: "/data" }],
+  };
+  it("appends to the services mapping, before the next key", () => {
+    const file =
+      "services:\n  web:\n    image: nginx:1\n\n  db:\n    image: postgres:17\n\n# shared\nvolumes:\n  x: {}\n";
+    expect(insertService(file, svc)).toBe(
+      "services:\n  web:\n    image: nginx:1\n\n  db:\n    image: postgres:17\n\n" +
+        "  romm:\n    image: ghcr.io/rommapp/romm:5.3.1\n    restart: unless-stopped\n" +
+        '    ports:\n      - "8081:8080"\n      - "5353:53/udp"\n' +
+        "    volumes:\n      - ./romm/data:/data\n" +
+        "\n# shared\nvolumes:\n  x: {}\n",
+    );
+  });
+  it("follows the file's indentation, without blank lines", () => {
+    const file = "services:\n    web:\n        image: nginx:1\n";
+    expect(insertService(file, { ...svc, ports: [], volumes: [] })).toBe(
+      "services:\n    web:\n        image: nginx:1\n" +
+        "    romm:\n        image: ghcr.io/rommapp/romm:5.3.1\n        restart: unless-stopped\n",
+    );
+  });
+  it("starts a services mapping when there is none", () => {
+    expect(insertService("services: {}\n", { ...svc, ports: [], volumes: [] })).toBe(
+      "services:\n  romm:\n    image: ghcr.io/rommapp/romm:5.3.1\n    restart: unless-stopped\n",
+    );
+    expect(insertService("", { ...svc, ports: [], volumes: [] })).toBe(
+      "services:\n  romm:\n    image: ghcr.io/rommapp/romm:5.3.1\n    restart: unless-stopped\n",
+    );
   });
 });

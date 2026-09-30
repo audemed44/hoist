@@ -156,3 +156,61 @@ export function tagOf(image: string): string {
   const colon = image.lastIndexOf(":");
   return colon > slash ? image.slice(colon + 1) : "latest";
 }
+
+export interface NewService {
+  name: string;
+  image: string;
+  ports: { host: number; container: number; protocol: string }[];
+  volumes: { host: string; container: string }[];
+}
+
+/**
+ * Adds a service at the end of the file's `services:` mapping, matching the
+ * file's indentation and whether it separates services with blank lines.
+ */
+export function insertService(content: string, svc: NewService): string {
+  const lines = content.replace(/\n+$/, "").split("\n");
+  let start = lines.findIndex((l) => /^services:\s*(\{\s*\})?\s*(#.*)?$/.test(l));
+  if (start < 0) {
+    if (lines.length === 1 && lines[0] === "") lines.pop();
+    lines.push("services:");
+    start = lines.length - 1;
+  } else {
+    lines[start] = "services:";
+  }
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^[^\s#]/.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  // Leave comments and blank lines above the next key where they are.
+  while (end > start + 1 && /^\s*(#.*)?$/.test(lines[end - 1])) end--;
+
+  const body = lines.slice(start + 1, end);
+  const first = body.find((l) => /^\s+\S/.test(l) && !/^\s*#/.test(l));
+  const u = first ? first.match(/^\s+/)![0] : "  ";
+  const isServiceLine = (l: string | undefined) =>
+    !!l && l.startsWith(u) && /^[^\s#]/.test(l.slice(u.length));
+  const spaced = body.some((l, i) => i > 0 && l.trim() === "" && isServiceLine(body[i + 1]));
+
+  const block = [
+    `${u}${svc.name}:`,
+    `${u}${u}image: ${svc.image}`,
+    `${u}${u}restart: unless-stopped`,
+  ];
+  if (svc.ports.length) {
+    block.push(`${u}${u}ports:`);
+    for (const p of svc.ports) {
+      block.push(`${u}${u}${u}- "${p.host}:${p.container}${p.protocol === "udp" ? "/udp" : ""}"`);
+    }
+  }
+  if (svc.volumes.length) {
+    block.push(`${u}${u}volumes:`);
+    for (const v of svc.volumes) block.push(`${u}${u}${u}- ${v.host}:${v.container}`);
+  }
+  if (spaced && end > start + 1) block.unshift("");
+  lines.splice(end, 0, ...block);
+  return lines.join("\n") + "\n";
+}

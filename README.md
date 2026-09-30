@@ -18,7 +18,10 @@ that idles at about 4 MB of RAM. A lightweight replacement for
   services, other stacks, or containers Hoist doesn't manage, and suggests
   fixes: pin third-party images left on `:latest` (images from your own
   GitHub account may follow it), add a restart policy and a healthcheck,
-  and move secrets typed into the file to `.env`.
+  and move secrets typed into the file to `.env`. **Add service** looks an
+  image up in its registry (without pulling) and inserts a service with a
+  pinned version, free host ports for what it exposes, and `./<service>/`
+  folders for its volumes.
 - **Environment**: edit the stack's `.env` (kept out of git). Values stay on
   the server until you reveal one; variables the compose file uses but
   aren't set, and ones it doesn't use, are pointed out.

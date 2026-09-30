@@ -90,6 +90,19 @@ export interface Conflict {
   with: string;
 }
 
+/** A service to add for an image, as the server suggests it. */
+export interface ServiceSuggestion {
+  service: string;
+  image: string;
+  /** Recent version tags, newest first. */
+  tags: string[];
+  ports: { container: number; protocol: string; host: number }[];
+  volumes: { container: string; host: string }[];
+  /** The image defines a healthcheck. */
+  healthcheck: boolean;
+  note?: string;
+}
+
 /** Advice about a compose file. */
 export interface Hint {
   service: string;

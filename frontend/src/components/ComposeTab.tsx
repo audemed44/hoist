@@ -1,10 +1,11 @@
-import { RotateCcw } from "lucide-preact";
+import { Plus, RotateCcw } from "lucide-preact";
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../api";
 import { useUnsavedWarning } from "../hooks";
 import { messageProblem } from "../lib";
 import { navigate } from "../router";
 import type { CheckResult, ComposeFile, Conflict, Hint, StackInfo } from "../types";
+import { AddServiceDialog } from "./AddService";
 import { CodeEditor } from "./CodeEditor";
 import { Dialog, ErrorNote } from "./ui";
 
@@ -24,6 +25,7 @@ export function ComposeTab(props: { stack: StackInfo; readOnly: boolean; onSaved
   const [error, setError] = useState("");
   const [reviewing, setReviewing] = useState(false);
   const [notice, setNotice] = useState("");
+  const [adding, setAdding] = useState(false);
 
   const load = async () => {
     try {
@@ -76,6 +78,11 @@ export function ComposeTab(props: { stack: StackInfo; readOnly: boolean; onSaved
           </button>
         )}
         {!props.readOnly && (
+          <button class="btn" onClick={() => setAdding(true)}>
+            <Plus size={14} /> Add service
+          </button>
+        )}
+        {!props.readOnly && (
           <button class="btn btn-primary" disabled={!dirty} onClick={() => setReviewing(true)}>
             Review and save
           </button>
@@ -96,6 +103,18 @@ export function ComposeTab(props: { stack: StackInfo; readOnly: boolean; onSaved
         readOnly={props.readOnly}
         height="calc(100dvh - 260px)"
       />
+      {adding && (
+        <AddServiceDialog
+          stack={name}
+          draft={draft}
+          onClose={() => setAdding(false)}
+          onInsert={(content) => {
+            setDraft(content);
+            setRevision((r) => r + 1);
+            setAdding(false);
+          }}
+        />
+      )}
       {reviewing && (
         <ReviewDialog
           stack={props.stack}
