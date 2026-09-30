@@ -46,9 +46,10 @@ type foyerWidget struct {
 }
 
 func (s *Server) foyerWidget(w http.ResponseWriter, r *http.Request) {
-	infos := make([]StackInfo, len(s.Config.Stacks))
+	stacks := s.Config.List()
+	infos := make([]StackInfo, len(stacks))
 	var wg sync.WaitGroup
-	for i, st := range s.Config.Stacks {
+	for i, st := range stacks {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

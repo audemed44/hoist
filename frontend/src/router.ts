@@ -6,6 +6,7 @@ import { useEffect, useState } from "preact/hooks";
  *   /stacks/<name>[/<tab>]     one stack; tab is services, compose, env, history or deploys
  *   /jobs/<id>                 a deploy and its log
  *   /audit                     the audit log
+ *   /new                       add a stack: adopt a running project or create one
  */
 export const TABS = ["services", "compose", "env", "history", "deploys"] as const;
 export type Tab = (typeof TABS)[number];
@@ -14,7 +15,8 @@ export type Route =
   | { page: "home" }
   | { page: "stack"; name: string; tab: Tab }
   | { page: "job"; id: string }
-  | { page: "audit" };
+  | { page: "audit" }
+  | { page: "new" };
 
 export function parseRoute(path: string): Route {
   const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
@@ -24,6 +26,7 @@ export function parseRoute(path: string): Route {
   }
   if (parts[0] === "jobs" && parts[1]) return { page: "job", id: parts[1] };
   if (parts[0] === "audit") return { page: "audit" };
+  if (parts[0] === "new") return { page: "new" };
   return { page: "home" };
 }
 
@@ -37,6 +40,8 @@ export function href(route: Route): string {
       return `/jobs/${encodeURIComponent(route.id)}`;
     case "audit":
       return "/audit";
+    case "new":
+      return "/new";
   }
 }
 

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { ago, gitLabel, isConventional, resultSummary, shortDuration, updateText } from "./lib";
+import {
+  ago,
+  gitLabel,
+  isConventional,
+  projectName,
+  resultSummary,
+  shortDuration,
+  stackName,
+  updateText,
+} from "./lib";
 import { href, parseRoute } from "./router";
 import type { GitStatus } from "./types";
 
@@ -57,6 +66,7 @@ describe("routes", () => {
       "/stacks/main-stack/env",
       "/jobs/20260930-120000-abcdef",
       "/audit",
+      "/new",
     ]) {
       expect(href(parseRoute(path))).toBe(path);
     }
@@ -95,5 +105,17 @@ describe("updates", () => {
     expect(
       updateText({ service: "b", image: "localhost:5000/b", policy: "off", new_image: true }),
     ).toBe("new image");
+  });
+});
+
+describe("names", () => {
+  it("cleans stack names", () => {
+    expect(stackName(" My Stack! ")).toBe("my-stack");
+    expect(stackName("romm")).toBe("romm");
+    expect(stackName("--x_")).toBe("x");
+  });
+  it("derives project names like compose", () => {
+    expect(projectName("/home/u/homelab/Main Stack/")).toBe("mainstack");
+    expect(projectName("/srv/_romm")).toBe("romm");
   });
 });

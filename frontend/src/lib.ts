@@ -70,6 +70,24 @@ export const ACTION_LABEL: Record<string, string> = {
   "stack.create": "Stack created",
 };
 
+/** A stack name as the server accepts it: lowercase letters, digits, - and _. */
+export function stackName(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "");
+}
+
+/** The compose project name compose derives from a folder. */
+export function projectName(path: string): string {
+  const base = path.replace(/\/+$/, "").split("/").pop() ?? "";
+  return base
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "")
+    .replace(/^[-_]+/, "");
+}
+
 export function auditTone(e: AuditEvent): Tone {
   if (e.result === "failed") return "bad";
   if (e.result === "running") return "accent";

@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -98,6 +99,8 @@ type Container struct {
 
 const (
 	labelProject = "com.docker.compose.project"
+	labelDir     = "com.docker.compose.project.working_dir"
+	labelFiles   = "com.docker.compose.project.config_files"
 	labelService = "com.docker.compose.service"
 	labelHash    = "com.docker.compose.config-hash"
 	labelOneOff  = "com.docker.compose.oneoff"
@@ -131,6 +134,59 @@ func (c *Client) Project(ctx context.Context, project string) ([]Container, erro
 			State: it.State, Status: it.Status, Created: it.Created,
 			ConfigHash: it.Labels[labelHash], OneOff: it.Labels[labelOneOff] == "True",
 		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// ProjectInfo is a compose project as its containers describe it.
+type ProjectInfo struct {
+	Name string `json:"name"`
+	// Dir and Files are where it was started from, as compose recorded them.
+	Dir      string   `json:"dir"`
+	Files    []string `json:"files"`
+	Services []string `json:"services"`
+	Running  int      `json:"running"`
+	Total    int      `json:"total"`
+}
+
+// Projects lists every compose project with containers, running or not.
+func (c *Client) Projects(ctx context.Context) ([]ProjectInfo, error) {
+	var items []struct {
+		State  string
+		Labels map[string]string
+	}
+	filters, _ := json.Marshal(map[string][]string{"label": {labelProject}})
+	q := url.Values{"all": {"1"}, "filters": {string(filters)}}
+	if err := c.do(ctx, http.MethodGet, "/containers/json", q, nil, &items); err != nil {
+		return nil, err
+	}
+	byName := map[string]*ProjectInfo{}
+	for _, it := range items {
+		if it.Labels[labelOneOff] == "True" {
+			continue
+		}
+		name := it.Labels[labelProject]
+		p := byName[name]
+		if p == nil {
+			p = &ProjectInfo{Name: name, Dir: it.Labels[labelDir], Files: []string{}, Services: []string{}}
+			if f := it.Labels[labelFiles]; f != "" {
+				p.Files = strings.Split(f, ",")
+			}
+			byName[name] = p
+		}
+		if svc := it.Labels[labelService]; svc != "" && !slices.Contains(p.Services, svc) {
+			p.Services = append(p.Services, svc)
+		}
+		p.Total++
+		if it.State == "running" {
+			p.Running++
+		}
+	}
+	out := make([]ProjectInfo, 0, len(byName))
+	for _, p := range byName {
+		sort.Strings(p.Services)
+		out = append(out, *p)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil

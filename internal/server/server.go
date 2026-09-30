@@ -54,6 +54,8 @@ func (s *Server) Handler() http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/stacks", s.listStacks)
 	api.HandleFunc("GET /api/stack-names", s.stackNames)
+	api.HandleFunc("POST /api/stacks", s.writable(s.addStack))
+	api.HandleFunc("GET /api/discover", s.discover)
 	api.HandleFunc("GET /api/stacks/{name}", s.getStack)
 	api.HandleFunc("GET /api/stacks/{name}/compose", s.getCompose)
 	api.HandleFunc("POST /api/stacks/{name}/check", s.checkCompose)

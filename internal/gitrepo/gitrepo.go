@@ -208,7 +208,13 @@ func (r *Repo) Commit(ctx context.Context, file, message string, author Author) 
 	if err != nil {
 		return "", err
 	}
-	if _, err := run(ctx, r.Root, "add", "--", rel); err != nil {
+	// A tracked file is staged with -u, which works even when .gitignore
+	// covers its folder (as after Track).
+	add := []string{"add", "--", rel}
+	if _, err := run(ctx, r.Root, "ls-files", "--error-unmatch", "--", rel); err == nil {
+		add = []string{"add", "--update", "--", rel}
+	}
+	if _, err := run(ctx, r.Root, add...); err != nil {
 		return "", err
 	}
 	if _, err := run(ctx, r.Root, "diff", "--cached", "--quiet", "--", rel); err == nil {
@@ -324,6 +330,36 @@ func isHash(s string) bool {
 }
 
 // Committed returns a file as it is in HEAD.
+// Ignored reports whether .gitignore keeps file out of git (tracked files
+// never are).
+func (r *Repo) Ignored(ctx context.Context, file string) (bool, error) {
+	rel, err := r.Rel(file)
+	if err != nil {
+		return false, err
+	}
+	out, err := run(ctx, r.Root, "check-ignore", "--", rel)
+	if strings.TrimSpace(out) != "" {
+		return true, nil
+	}
+	if err != nil && !strings.HasSuffix(err.Error(), "exit status 1") { // 1: not ignored
+		return false, err
+	}
+	return false, nil
+}
+
+// Track stages file even though .gitignore excludes it. Once tracked, later
+// commits of it work as usual.
+func (r *Repo) Track(ctx context.Context, file string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rel, err := r.Rel(file)
+	if err != nil {
+		return err
+	}
+	_, err = run(ctx, r.Root, "add", "--force", "--", rel)
+	return err
+}
+
 func (r *Repo) Committed(ctx context.Context, file string) ([]byte, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

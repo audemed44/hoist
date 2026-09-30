@@ -121,7 +121,7 @@ func (c *Checker) Check(ctx context.Context) (State, error) {
 	st := State{Stacks: map[string][]Service{}}
 	tagCache := map[string][]string{}
 	var cacheMu sync.Mutex
-	for _, stack := range c.cfg.Stacks {
+	for _, stack := range c.cfg.List() {
 		svcs, err := compose.Services(ctx, stack)
 		if err != nil {
 			slog.Warn("update check: compose", "stack", stack.Name, "err", err)
