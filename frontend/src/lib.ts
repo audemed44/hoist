@@ -1,4 +1,12 @@
-import type { Change, GitStatus, Job, JobResult, ServiceUpdate, StackInfo } from "./types";
+import type {
+  AuditEvent,
+  Change,
+  GitStatus,
+  Job,
+  JobResult,
+  ServiceUpdate,
+  StackInfo,
+} from "./types";
 
 /** Server settings the whole UI needs; filled in from the session. */
 export const settings = { conventional: true };
@@ -48,6 +56,25 @@ export function jobSummary(job: Job): string {
 }
 
 export type Tone = "good" | "warn" | "bad" | "accent" | "";
+
+export const ACTION_LABEL: Record<string, string> = {
+  deploy: "Deploy",
+  "compose.save": "Compose edit",
+  "env.save": "Environment edit",
+  "git.commit": "Commit",
+  "git.discard": "Discarded edits",
+  "git.pull": "Pull",
+  "git.push": "Push",
+  "update.apply": "Update",
+  "stack.adopt": "Stack adopted",
+  "stack.create": "Stack created",
+};
+
+export function auditTone(e: AuditEvent): Tone {
+  if (e.result === "failed") return "bad";
+  if (e.result === "running") return "accent";
+  return e.error ? "warn" : "good";
+}
 
 /** A short description of the branch state and how worried to be. */
 export function gitLabel(git: GitStatus | undefined): { text: string; tone: Tone } {

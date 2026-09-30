@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ── Server ──────────────────────────────────────────────────────────────────
-FROM golang:1.25-alpine AS server
+FROM golang:1.26-alpine AS server
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

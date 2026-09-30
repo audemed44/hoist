@@ -1,4 +1,5 @@
 import type {
+  AuditEvent,
   CheckResult,
   Commit,
   ComposeFile,
@@ -49,6 +50,23 @@ const json = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
+export interface AuditQuery {
+  stack?: string;
+  /** An action, or a group ending in "." such as "git.". */
+  action?: string;
+  trigger?: string;
+  result?: string;
+  before?: number;
+  limit?: number;
+}
+
+function queryString(q: object): string {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== "") params.set(k, String(v));
+  const s = params.toString();
+  return s ? `?${s}` : "";
+}
+
 const stack = (name: string) => `/api/stacks/${encodeURIComponent(name)}`;
 
 export const api = {
@@ -57,6 +75,7 @@ export const api = {
   logout: () => request<void>("/api/session", { method: "DELETE" }),
 
   stacks: () => request<StackInfo[]>("/api/stacks"),
+  stackNames: () => request<string[]>("/api/stack-names"),
   stack: (name: string) => request<StackInfo>(stack(name)),
   compose: (name: string) => request<ComposeFile>(`${stack(name)}/compose`),
   check: (name: string, content: string) =>
@@ -98,5 +117,6 @@ export const api = {
       `/api/jobs?limit=${limit}${stackName ? `&stack=${encodeURIComponent(stackName)}` : ""}`,
     ),
   job: (id: string) => request<Job>(`/api/jobs/${id}`),
+  audit: (q: AuditQuery) => request<AuditEvent[]>(`/api/audit${queryString(q)}`),
   jobLogUrl: (id: string) => `/api/jobs/${id}/log`,
 };

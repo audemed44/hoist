@@ -153,6 +153,23 @@ export interface UpdatesInfo {
   stacks: Record<string, ServiceUpdate[]>;
 }
 
+/** One entry of the audit log. */
+export interface AuditEvent {
+  id: number;
+  time: string;
+  stack: string;
+  /** Services the action was limited to; empty for the whole stack. */
+  services: string[];
+  action: string;
+  /** ui, api, foyer or auto. */
+  trigger: string;
+  detail?: string;
+  commit?: string;
+  job?: string;
+  result: "ok" | "failed" | "running";
+  error?: string;
+}
+
 /** A compose file changed outside Hoist, next to its last commit. */
 export interface DriftInfo {
   committed: ComposeFile;
