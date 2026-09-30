@@ -64,6 +64,11 @@ export function DeployDialog(props: { stack: StackInfo; service?: string; onClos
       ) : (
         <p>The compose file matches what's running. Only new images will be picked up.</p>
       )}
+      {s.git?.modified && (
+        <p class="note note-warn">
+          The compose file has changes that aren't committed; they'll be deployed as they are.
+        </p>
+      )}
       {s.self && (
         <p class="note">
           This is Hoist's own stack. A helper container runs the deploy, so it carries on while

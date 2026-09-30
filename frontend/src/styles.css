@@ -522,6 +522,29 @@ pre {
   border-left-color: var(--bad);
   color: var(--fg);
 }
+.note-warn {
+  border-color: rgb(245 158 11 / 0.45);
+  border-left-color: var(--warn);
+  color: var(--fg);
+}
+.git-drift {
+  flex-basis: 100%;
+}
+.link-btn {
+  color: var(--accent-hi);
+  font-weight: 600;
+}
+.link-btn:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn-danger {
+  color: var(--bad);
+  border-color: rgb(var(--bad-rgb) / 0.4);
+}
+.btn-danger:hover:not(:disabled) {
+  border-color: var(--bad);
+}
 .note-accent {
   border-left-color: var(--accent);
   color: var(--fg);
@@ -868,6 +891,9 @@ a.note:hover {
   .svc-image-cell {
     grid-column: 1;
     padding-left: 19px;
+  }
+  .svc-image-cell .svc-image {
+    padding-left: 0;
   }
   .svc-row {
     grid-template-columns: minmax(0, 1fr) auto 40px;

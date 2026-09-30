@@ -19,8 +19,11 @@ that idles at about 4 MB of RAM. A lightweight replacement for
   aren't set, and ones it doesn't use, are pointed out.
 - **History**: every version of the compose file, following renames. Open
   any of them in the editor to roll back.
-- **Git**: ahead/behind the remote, pull (fast-forward only), push, and
-  commit edits made outside Hoist.
+- **Git**: ahead/behind the remote, pull (fast-forward only) and push.
+- **Drift**: when the compose file is edited on the server, outside Hoist,
+  the stack says so and shows the difference from the last commit, to
+  commit (with a suggested message), discard, or take into the editor.
+  Deploys made meanwhile are marked as including uncommitted changes.
 - **Update checks**: every few hours Hoist asks the registries, without
   pulling, whether a tag now points to a newer image and whether a pinned
   version has newer releases. Apply one with a click (the tag bump is

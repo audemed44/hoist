@@ -145,3 +145,23 @@ func TestRedact(t *testing.T) {
 		t.Errorf("redact = %q", got)
 	}
 }
+
+func TestCommittedAndRestore(t *testing.T) {
+	ctx := context.Background()
+	a, _ := setup(t)
+	r, _ := Open(ctx, a)
+	file := filepath.Join(a, "compose.yml")
+	_ = os.WriteFile(file, []byte("edited on the server\n"), 0o644)
+	head, err := r.Committed(ctx, file)
+	if err != nil || string(head) != "v1\n" {
+		t.Fatalf("committed = %q, %v", head, err)
+	}
+	if err := r.Restore(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(file)
+	st, _ := r.Status(ctx, file, 0)
+	if string(data) != "v1\n" || st.Modified {
+		t.Errorf("after restore: %q, modified %v", data, st.Modified)
+	}
+}

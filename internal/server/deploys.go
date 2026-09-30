@@ -78,15 +78,17 @@ func (s *Server) startDeploy(st config.Stack, services []string, trigger, commit
 			}
 		}
 	}
-	if commit == "" {
-		if repo, _ := gitrepo.Open(ctx, st.Path); repo != nil {
-			if status, err := repo.Status(ctx, st.ComposePath(), 0); err == nil {
+	dirty := false
+	if repo, _ := gitrepo.Open(ctx, st.Path); repo != nil {
+		if status, err := repo.Status(ctx, st.ComposePath(), 0); err == nil {
+			if commit == "" {
 				commit = status.Head
 			}
+			dirty = status.Modified
 		}
 	}
 	self := s.isSelf(st)
-	job, err := s.Jobs.Create(jobs.Job{Stack: st.Name, Services: services, Trigger: trigger, Commit: commit, Self: self})
+	job, err := s.Jobs.Create(jobs.Job{Stack: st.Name, Services: services, Trigger: trigger, Commit: commit, Dirty: dirty, Self: self})
 	if err != nil {
 		return nil, http.StatusInternalServerError, err
 	}

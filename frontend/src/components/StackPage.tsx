@@ -8,15 +8,16 @@ import {
 import { useState } from "preact/hooks";
 import { api } from "../api";
 import { useData } from "../hooks";
-import { ago, gitLabel, jobSummary, messageProblem } from "../lib";
+import { ago, gitLabel, jobSummary } from "../lib";
 import { href, type Tab, TABS } from "../router";
 import type { StackInfo } from "../types";
 import { ComposeTab } from "./ComposeTab";
 import { DeployDialog } from "./DeployDialog";
+import { DriftDialog } from "./Drift";
 import { EnvTab } from "./EnvTab";
 import { DeploysTab, HistoryTab } from "./HistoryTabs";
 import { ServicesTab } from "./ServicesTab";
-import { Dialog, ErrorNote } from "./ui";
+import { ErrorNote } from "./ui";
 
 const TAB_LABEL: Record<Tab, string> = {
   services: "Services",
@@ -182,9 +183,9 @@ function GitBar(props: {
       >
         <RefreshCw size={13} class={busy === "fetch" ? "spin" : ""} /> Check
       </button>
-      {!props.readOnly && git.modified && (
+      {git.modified && (
         <button class="btn btn-small" disabled={!!busy} onClick={() => setCommitting(true)}>
-          <GitCommitHorizontal size={13} /> Commit
+          <GitCommitHorizontal size={13} /> Review changes
         </button>
       )}
       {!props.readOnly && git.behind > 0 && (
@@ -206,9 +207,18 @@ function GitBar(props: {
         </button>
       )}
       {error && <div class="form-error git-error">{error}</div>}
+      {git.modified && (
+        <div class="note note-warn git-drift">
+          The compose file was changed on the server and differs from the last commit.{" "}
+          <button class="link-btn" onClick={() => setCommitting(true)}>
+            Review
+          </button>
+        </div>
+      )}
       {committing && (
-        <CommitDialog
+        <DriftDialog
           stack={stack.name}
+          readOnly={props.readOnly}
           onClose={() => setCommitting(false)}
           onDone={() => {
             setCommitting(false);
@@ -217,52 +227,5 @@ function GitBar(props: {
         />
       )}
     </div>
-  );
-}
-
-function CommitDialog(props: { stack: string; onClose: () => void; onDone: () => void }) {
-  const [message, setMessage] = useState(`chore(${props.stack}): update compose file`);
-  const problem = messageProblem(message);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    setBusy(true);
-    try {
-      await api.commit(props.stack, message);
-      props.onDone();
-    } catch (e) {
-      setError((e as Error).message);
-      setBusy(false);
-    }
-  };
-  return (
-    <Dialog
-      title="Commit changes"
-      onClose={props.onClose}
-      footer={
-        <>
-          <span class="spacer" />
-          <button class="btn btn-ghost" onClick={props.onClose}>
-            Cancel
-          </button>
-          <button class="btn btn-primary" disabled={busy || !!problem} onClick={submit}>
-            Commit and push
-          </button>
-        </>
-      }
-    >
-      <p class="muted">
-        The compose file was changed outside Hoist. Commit it as it is on disk; open the Compose tab
-        to see it first.
-      </p>
-      <input
-        class="input"
-        value={message}
-        onInput={(e) => setMessage(e.currentTarget.value)}
-        aria-label="Commit message"
-      />
-      {problem && <div class="field-hint tone-warn">{problem}</div>}
-      {error && <div class="form-error">{error}</div>}
-    </Dialog>
   );
 }
