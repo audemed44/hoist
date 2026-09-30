@@ -60,13 +60,15 @@ export interface StackInfo {
   file: string;
   project: string;
   self: boolean;
-  counts: { services: number; running: number; pending: number };
+  counts: { services: number; running: number; pending: number; updates: number };
   services: ServiceState[];
   error?: string;
   git?: GitStatus;
   git_error?: string;
   active?: Job;
   last?: Job;
+  /** Services the last update check found updates for. */
+  updates: ServiceUpdate[];
 }
 
 export interface ComposeFile {
@@ -116,4 +118,35 @@ export interface Session {
   read_only: boolean;
   /** Commit messages must follow Conventional Commits. */
   conventional: boolean;
+}
+
+export type Policy = "off" | "digest" | "patch" | "minor";
+
+export interface Candidate {
+  tag: string;
+  bump: "major" | "minor" | "patch";
+}
+
+/** What the update check found for a service. */
+export interface ServiceUpdate {
+  service: string;
+  image: string;
+  /** The tag now points to a different image than the running one. */
+  new_image?: boolean;
+  /** The newest version tag, and the newest the policy would apply. */
+  latest?: Candidate;
+  allowed?: Candidate;
+  policy: Policy;
+  skipped?: string;
+  error?: string;
+}
+
+export interface UpdatesInfo {
+  checked_at?: string;
+  checking: boolean;
+  /** Check interval, e.g. "6h0m0s"; empty when checks only run on demand. */
+  every: string;
+  auto: Policy;
+  count: number;
+  stacks: Record<string, ServiceUpdate[]>;
 }

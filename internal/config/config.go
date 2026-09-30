@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -41,6 +42,8 @@ type Stack struct {
 	// RemoveOrphans stops containers whose service was removed from the
 	// file. On by default.
 	RemoveOrphans *bool `yaml:"remove_orphans,omitempty" json:"remove_orphans"`
+	// Updates overrides the automatic update policy.
+	Updates *StackUpdates `yaml:"updates,omitempty" json:"updates,omitempty"`
 }
 
 func (s Stack) ShouldRemoveOrphans() bool { return s.RemoveOrphans == nil || *s.RemoveOrphans }
@@ -51,9 +54,50 @@ func (s Stack) ComposePath() string { return filepath.Join(s.Path, s.File) }
 // EnvPath is the .env file compose reads for interpolation.
 func (s Stack) EnvPath() string { return filepath.Join(s.Path, ".env") }
 
+// Updates configures the image update check.
+type Updates struct {
+	// Every is how often to check registries, e.g. "6h"; "off" checks only
+	// when asked. Default 6h.
+	Every string `yaml:"every,omitempty" json:"every"`
+	// Auto is the default policy: off (report only), digest (redeploy when
+	// a tag gets a new image), patch or minor (also bump pinned versions
+	// that far). Majors are never automatic. Default off.
+	Auto string `yaml:"auto,omitempty" json:"auto"`
+	// Notify is an Apprise API URL (…/notify/<key>) told about automatic
+	// updates and failures.
+	Notify string `yaml:"notify,omitempty" json:"-"`
+
+	interval time.Duration
+}
+
+// Interval is the check period; 0 means only on demand.
+func (u Updates) Interval() time.Duration { return u.interval }
+
+// StackUpdates overrides the update policy for a stack and its services.
+type StackUpdates struct {
+	Auto     string            `yaml:"auto,omitempty" json:"auto"`
+	Services map[string]string `yaml:"services,omitempty" json:"services"`
+}
+
+var policies = map[string]bool{"off": true, "digest": true, "patch": true, "minor": true}
+
 type Config struct {
-	Git    Git     `yaml:"git" json:"git"`
-	Stacks []Stack `yaml:"stacks" json:"stacks"`
+	Git     Git     `yaml:"git" json:"git"`
+	Updates Updates `yaml:"updates" json:"updates"`
+	Stacks  []Stack `yaml:"stacks" json:"stacks"`
+}
+
+// Policy is the update policy for one service of a stack.
+func (c *Config) Policy(st Stack, service string) string {
+	if st.Updates != nil {
+		if p := st.Updates.Services[service]; p != "" {
+			return p
+		}
+		if st.Updates.Auto != "" {
+			return st.Updates.Auto
+		}
+	}
+	return c.Updates.Auto
 }
 
 func (c *Config) Stack(name string) (Stack, bool) {
@@ -104,6 +148,24 @@ func (c *Config) normalise() error {
 	if len(c.Stacks) == 0 {
 		return errors.New("no stacks configured")
 	}
+	switch c.Updates.Every {
+	case "":
+		c.Updates.interval = 6 * time.Hour
+	case "off", "0":
+		c.Updates.interval = 0
+	default:
+		d, err := time.ParseDuration(c.Updates.Every)
+		if err != nil || d < 10*time.Minute {
+			return fmt.Errorf("updates.every: %q should be like 6h (at least 10m), or off", c.Updates.Every)
+		}
+		c.Updates.interval = d
+	}
+	if c.Updates.Auto == "" {
+		c.Updates.Auto = "off"
+	}
+	if !policies[c.Updates.Auto] {
+		return fmt.Errorf("updates.auto: %q should be off, digest, patch or minor", c.Updates.Auto)
+	}
 	seen := map[string]bool{}
 	for i := range c.Stacks {
 		s := &c.Stacks[i]
@@ -132,6 +194,16 @@ func (c *Config) normalise() error {
 		}
 		if projectRe.MatchString(s.Project) {
 			return fmt.Errorf("stack %q: project %q must be lowercase letters, digits, - and _", s.Name, s.Project)
+		}
+		if u := s.Updates; u != nil {
+			if u.Auto != "" && !policies[u.Auto] {
+				return fmt.Errorf("stack %q: updates.auto %q should be off, digest, patch or minor", s.Name, u.Auto)
+			}
+			for svc, p := range u.Services {
+				if !policies[p] {
+					return fmt.Errorf("stack %q: updates for %s: %q should be off, digest, patch or minor", s.Name, svc, p)
+				}
+			}
 		}
 	}
 	return nil

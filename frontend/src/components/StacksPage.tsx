@@ -2,9 +2,10 @@ import { ArrowUpRight, Rocket } from "lucide-preact";
 import { useState } from "preact/hooks";
 import { api } from "../api";
 import { useData } from "../hooks";
-import { ago, gitLabel, jobSummary, pendingText, stackTone } from "../lib";
+import { ago, gitLabel, jobSummary, pendingText, stackTone, updateText } from "../lib";
 import type { StackInfo } from "../types";
 import { DeployDialog } from "./DeployDialog";
+import { UpdatesBar } from "./Updates";
 import { Dot, ErrorNote, SectionHead } from "./ui";
 
 export function StacksPage(props: { readOnly: boolean }) {
@@ -17,6 +18,7 @@ export function StacksPage(props: { readOnly: boolean }) {
   const running = stacks.reduce((n, s) => n + s.counts.running, 0);
   const total = stacks.reduce((n, s) => n + s.counts.services, 0);
   const pending = stacks.reduce((n, s) => n + s.counts.pending, 0);
+  const available = stacks.reduce((n, s) => n + s.counts.updates, 0);
   const last = stacks
     .map((s) => s.last)
     .filter((j) => j)
@@ -37,6 +39,7 @@ export function StacksPage(props: { readOnly: boolean }) {
             tone={running < total ? "warn" : ""}
           />
           <Figure value={pending} label="To deploy" tone={pending ? "accent" : ""} />
+          <Figure value={available} label="Updates" tone={available ? "accent" : ""} />
           {last && (
             <Figure
               value={ago(last.started)}
@@ -45,6 +48,7 @@ export function StacksPage(props: { readOnly: boolean }) {
             />
           )}
         </div>
+        <UpdatesBar onChecked={reload} />
       </header>
       {error && <ErrorNote>{error}</ErrorNote>}
       <div class="stack-list stagger">
@@ -142,6 +146,16 @@ function StackRow(props: {
               <span key={svc.name} class={`chip chip-${svc.change}`}>
                 {svc.change} {svc.name}
               </span>
+            ))}
+            {s.updates.map((u) => (
+              <a
+                key={u.service}
+                class="chip chip-update"
+                href={`/stacks/${s.name}`}
+                title="An update is available"
+              >
+                {u.service} {updateText(u)}
+              </a>
             ))}
           </div>
         )}

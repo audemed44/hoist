@@ -57,13 +57,14 @@ func (s *Server) foyerWidget(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 
-	var running, total, pending int
+	var running, total, pending, available int
 	var last *jobs.Job
 	out := foyerWidget{Version: 1, ItemsTitle: "Stacks", ItemsLayout: "list", Items: []foyerItem{}}
 	for _, info := range infos {
 		running += info.Counts.Running
 		total += info.Counts.Services
 		pending += info.Counts.Pending
+		available += info.Counts.Updates
 		if info.Last != nil && (last == nil || info.Last.Started.After(last.Started)) {
 			last = info.Last
 		}
@@ -74,6 +75,11 @@ func (s *Server) foyerWidget(w http.ResponseWriter, r *http.Request) {
 		}
 		if info.Counts.Pending > 0 {
 			item.Subtitle += fmt.Sprintf(" · %d to deploy", info.Counts.Pending)
+		}
+		if n := info.Counts.Updates; n == 1 {
+			item.Subtitle += " · 1 update"
+		} else if n > 1 {
+			item.Subtitle += fmt.Sprintf(" · %d updates", n)
 		}
 		switch {
 		case info.Error != "":
@@ -101,6 +107,7 @@ func (s *Server) foyerWidget(w http.ResponseWriter, r *http.Request) {
 	out.Stats = []foyerStat{
 		{Label: "Running", Value: strconv.Itoa(running), Unit: "/" + strconv.Itoa(total), Caption: "containers", Tone: runTone},
 		{Label: "To deploy", Value: strconv.Itoa(pending), Caption: "services changed", Tone: map[bool]string{true: "accent"}[pending > 0]},
+		{Label: "Updates", Value: strconv.Itoa(available), Caption: "images and versions", Tone: map[bool]string{true: "accent"}[available > 0]},
 	}
 	if last != nil {
 		tone := ""

@@ -15,8 +15,10 @@ Config is `/config/hoist.yaml`; deploy records and logs are files in
 ## Constraints
 
 - **Low memory is a feature.** The server idles around 4 MB RSS. Compose and
-  git run as child processes only while they're needed. No background
-  polling; git fetches happen on page loads, at most every two minutes.
+  git run as child processes only while they're needed. The only
+  background work is the update check (`internal/updates`, every
+  `updates.every`, default 6h): manifest HEADs and tag lists, never pulls.
+  Git fetches happen on page loads, at most every two minutes.
 - The Go module has one dependency (yaml.v3). Justify any new one.
 - Hoist can do anything root can, so: every `/api/` call needs the token
   (bearer or the derived session cookie), and state-changing browser
