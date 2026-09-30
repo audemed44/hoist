@@ -1235,11 +1235,21 @@ button.chip {
 .add-stack .muted {
   font-weight: 400;
 }
-.conflicts ul {
+.conflicts ul,
+.hints ul {
   margin: 8px 0 0;
   padding-left: 18px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   color: var(--fg-2);
+}
+.hints details {
+  color: var(--fg-3);
+}
+.hints strong + ul + details {
+  margin-top: 10px;
+}
+.hints summary {
+  cursor: pointer;
 }

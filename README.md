@@ -15,7 +15,10 @@ that idles at about 4 MB of RAM. A lightweight replacement for
   Conventional Commits message written for you
   (`chore(main-stack): bump shelfloom 0.4 → 0.5`) and a push. The review
   points out host ports and container names the file shares with its own
-  services, other stacks, or containers Hoist doesn't manage.
+  services, other stacks, or containers Hoist doesn't manage, and suggests
+  fixes: pin third-party images left on `:latest` (images from your own
+  GitHub account may follow it), add a restart policy and a healthcheck,
+  and move secrets typed into the file to `.env`.
 - **Environment**: edit the stack's `.env` (kept out of git). Values stay on
   the server until you reveal one; variables the compose file uses but
   aren't set, and ones it doesn't use, are pointed out.

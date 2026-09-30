@@ -346,6 +346,21 @@ func (c *Client) RunHelper(ctx context.Context, self *Self, name string, entrypo
 	return created.ID, nil
 }
 
+// ImageHealthcheck reports whether a local image defines a healthcheck;
+// ErrNotFound means it isn't pulled.
+func (c *Client) ImageHealthcheck(ctx context.Context, image string) (bool, error) {
+	var info struct {
+		Config struct {
+			Healthcheck *struct{ Test []string }
+		}
+	}
+	if err := c.do(ctx, http.MethodGet, "/images/"+url.PathEscape(image)+"/json", nil, nil, &info); err != nil {
+		return false, err
+	}
+	h := info.Config.Healthcheck
+	return h != nil && len(h.Test) > 0 && h.Test[0] != "NONE", nil
+}
+
 // RepoDigests returns an image's registry digests ("repo@sha256:…"), which
 // docker records when it pulls. Locally built images have none.
 func (c *Client) RepoDigests(ctx context.Context, image string) ([]string, error) {

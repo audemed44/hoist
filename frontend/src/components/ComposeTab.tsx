@@ -4,7 +4,7 @@ import { api } from "../api";
 import { useUnsavedWarning } from "../hooks";
 import { messageProblem } from "../lib";
 import { navigate } from "../router";
-import type { CheckResult, ComposeFile, Conflict, StackInfo } from "../types";
+import type { CheckResult, ComposeFile, Conflict, Hint, StackInfo } from "../types";
 import { CodeEditor } from "./CodeEditor";
 import { Dialog, ErrorNote } from "./ui";
 
@@ -216,6 +216,7 @@ function ReviewDialog(props: {
         </div>
       )}
       {check && check.conflicts.length > 0 && <Conflicts conflicts={check.conflicts} />}
+      {check && check.hints.length > 0 && <Hints hints={check.hints} />}
       {check && (
         <>
           <CodeEditor value={props.draft} original={props.saved.content} readOnly height="46dvh" />
@@ -263,6 +264,44 @@ export function Conflicts(props: { conflicts: Conflict[] }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function HintList(props: { hints: Hint[] }) {
+  return (
+    <ul>
+      {props.hints.map((h) => (
+        <li key={`${h.service}|${h.kind}|${h.message}`}>
+          <span class="mono">{h.service}</span>: {h.message}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Suggestions for the file: the ones this edit brings first, the rest folded. */
+export function Hints(props: { hints: Hint[] }) {
+  const fresh = props.hints.filter((h) => h.new);
+  const old = props.hints.filter((h) => !h.new);
+  return (
+    <div class={`note hints ${fresh.length ? "note-accent" : ""}`}>
+      {fresh.length > 0 && (
+        <>
+          <strong>
+            {fresh.length === 1 ? "A suggestion" : `${fresh.length} suggestions`} for this edit
+          </strong>
+          <HintList hints={fresh} />
+        </>
+      )}
+      {old.length > 0 && (
+        <details>
+          <summary>
+            {old.length} {old.length === 1 ? "suggestion" : "suggestions"} the file already had
+          </summary>
+          <HintList hints={old} />
+        </details>
+      )}
     </div>
   );
 }

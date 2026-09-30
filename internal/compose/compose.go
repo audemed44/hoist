@@ -131,7 +131,16 @@ type Service struct {
 	ContainerName string `json:"container_name,omitempty"`
 	Hash          string `json:"-"`
 	// Ports are the host ports it publishes (ranges come expanded).
-	Ports []Port `json:"-"`
+	Ports []Port   `json:"-"`
+	Lint  LintInfo `json:"-"`
+}
+
+// LintInfo is what Lint looks at in a resolved service.
+type LintInfo struct {
+	Build          bool   // built from source, not pulled
+	Restart        string // restart, or deploy.restart_policy.condition
+	Healthcheck    bool
+	HealthcheckOff bool // healthcheck: disable: true
 }
 
 // Port is a published host port.
@@ -165,6 +174,17 @@ func parseServices(data []byte) ([]Service, error) {
 				Published string `json:"published"`
 				Protocol  string `json:"protocol"`
 			} `json:"ports"`
+			Build       json.RawMessage `json:"build"`
+			Restart     string          `json:"restart"`
+			Healthcheck *struct {
+				Test    []string `json:"test"`
+				Disable bool     `json:"disable"`
+			} `json:"healthcheck"`
+			Deploy *struct {
+				RestartPolicy *struct {
+					Condition string `json:"condition"`
+				} `json:"restart_policy"`
+			} `json:"deploy"`
 		} `json:"services"`
 	}
 	if err := json.Unmarshal(data, &model); err != nil {
@@ -173,6 +193,19 @@ func parseServices(data []byte) ([]Service, error) {
 	out := make([]Service, 0, len(model.Services))
 	for name, svc := range model.Services {
 		s := Service{Name: name, Image: svc.Image, ContainerName: svc.ContainerName}
+		s.Lint.Build = len(svc.Build) > 0 && string(svc.Build) != "null"
+		s.Lint.Restart = svc.Restart
+		if d := svc.Deploy; s.Lint.Restart == "" && d != nil && d.RestartPolicy != nil {
+			s.Lint.Restart = d.RestartPolicy.Condition
+			if s.Lint.Restart == "" {
+				s.Lint.Restart = "any"
+			}
+		}
+		if h := svc.Healthcheck; h != nil {
+			off := h.Disable || (len(h.Test) > 0 && h.Test[0] == "NONE")
+			s.Lint.HealthcheckOff = off
+			s.Lint.Healthcheck = !off && len(h.Test) > 0
+		}
 		for _, p := range svc.Ports {
 			n, err := strconv.Atoi(p.Published)
 			if err != nil || n == 0 { // not published, or left to docker

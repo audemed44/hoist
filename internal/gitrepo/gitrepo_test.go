@@ -197,3 +197,23 @@ func TestIgnoredAndTrack(t *testing.T) {
 		t.Fatalf("second commit of a tracked, ignored file: %v", err)
 	}
 }
+
+func TestGitHubOwner(t *testing.T) {
+	ctx := context.Background()
+	a, _ := setup(t)
+	r, _ := Open(ctx, a)
+	if o := r.GitHubOwner(ctx); o != "" {
+		t.Errorf("local remote: %q", o)
+	}
+	for url, want := range map[string]string{
+		"git@github.com:audemed44/hoist-stacks.git":           "audemed44",
+		"https://x-access-token:t@github.com/Some-One/stacks": "Some-One",
+		"ssh://git@github.com/org/repo.git":                   "org",
+		"https://gitlab.com/me/repo.git":                      "",
+	} {
+		git(t, a, "remote", "set-url", "origin", url)
+		if got := r.GitHubOwner(ctx); got != want {
+			t.Errorf("%s: %q, want %q", url, got, want)
+		}
+	}
+}
