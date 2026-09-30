@@ -224,6 +224,12 @@ function ReviewDialog(props: {
           ) : (
             <p class="muted">This stack isn't in git, so the file is saved without history.</p>
           )}
+          {props.saved.crlf && (
+            <p class="muted">
+              The file has Windows (CRLF) line endings; saving converts it to LF, so git will show
+              every line as changed this once.
+            </p>
+          )}
         </>
       )}
       {error && <div class="form-error">{error}</div>}

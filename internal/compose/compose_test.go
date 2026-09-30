@@ -151,3 +151,13 @@ func TestEnvironKeepsHoistSettingsOut(t *testing.T) {
 		}
 	}
 }
+
+func TestLineEndings(t *testing.T) {
+	crlf := []byte("services:\r\n  a: {}\r\n")
+	if got := string(ToLF(crlf)); got != "services:\n  a: {}\n" {
+		t.Errorf("ToLF = %q", got)
+	}
+	if !UsesCRLF(crlf) || UsesCRLF(ToLF(crlf)) || UsesCRLF(nil) {
+		t.Error("UsesCRLF")
+	}
+}

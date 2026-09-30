@@ -162,9 +162,17 @@ func contentHash(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// composeFile is a compose file as the editor sees it: always with \n line
+// endings. Hash is of the file as it is on disk; CRLF says it's stored with
+// \r\n, which the next save turns into \n.
 type composeFile struct {
 	Content string `json:"content"`
 	Hash    string `json:"hash"`
+	CRLF    bool   `json:"crlf,omitempty"`
+}
+
+func newComposeFile(data []byte) composeFile {
+	return composeFile{Content: string(compose.ToLF(data)), Hash: contentHash(data), CRLF: compose.UsesCRLF(data)}
 }
 
 func (s *Server) getCompose(w http.ResponseWriter, r *http.Request) {
@@ -177,7 +185,7 @@ func (s *Server) getCompose(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, composeFile{Content: string(data), Hash: contentHash(data)})
+	writeJSON(w, http.StatusOK, newComposeFile(data))
 }
 
 const maxCompose = 1 << 20
@@ -234,7 +242,7 @@ func (s *Server) putCompose(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "the compose file changed since you opened it; reload to see the new version")
 		return
 	}
-	content := []byte(body.Content)
+	content := compose.ToLF([]byte(body.Content))
 	if err := compose.Validate(r.Context(), st, content); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -449,7 +457,7 @@ func (s *Server) getHistoryFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, composeFile{Content: string(data), Hash: contentHash(data)})
+	writeJSON(w, http.StatusOK, newComposeFile(data))
 }
 
 func (s *Server) gitFetch(w http.ResponseWriter, r *http.Request) {
