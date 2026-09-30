@@ -25,7 +25,8 @@ import (
 const token = "0123456789abcdef0123"
 
 // fakeCompose stands in for docker-compose: it validates unless the file
-// says INVALID, and resolves to two services, web and db.
+// says INVALID, and resolves to two services, web and db, or to the JSON
+// on a "# json: " line of the file.
 const fakeCompose = `#!/bin/sh
 file=""
 while [ $# -gt 0 ]; do
@@ -37,7 +38,9 @@ while [ $# -gt 0 ]; do
 done
 case "$1 $2" in
   "config --quiet") if grep -q INVALID "$file"; then echo "invalid compose file $file" >&2; exit 1; fi ;;
-  "config --format") echo '{"services":{"web":{"image":"nginx"},"db":{"image":"postgres"}}}' ;;
+  "config --format")
+    if grep -q '^# json: ' "$file"; then sed -n 's/^# json: //p' "$file"
+    else echo '{"services":{"web":{"image":"nginx"},"db":{"image":"postgres"}}}'; fi ;;
   "config --hash") printf 'web h-web\ndb h-db\n' ;;
   *) echo "compose $*" ;;
 esac
@@ -106,10 +109,15 @@ func newEnv(t *testing.T, readOnly bool) *env {
 					"com.docker.compose.project.working_dir": dir, "com.docker.compose.project.config_files": files,
 				}}
 			}
+			multi := project("multi", "/srv/multi", "/srv/multi/a.yml,/srv/multi/b.yml", "x")
+			multi["Names"] = []string{"/multi-x-1"}
+			multi["Ports"] = []map[string]any{{"IP": "0.0.0.0", "PrivatePort": 80, "PublicPort": 9000, "Type": "tcp"}}
 			_ = json.NewEncoder(w).Encode([]map[string]any{
 				project("main-server", dir, filepath.Join(dir, "docker-compose.yml"), "web"),
 				project("romm", filepath.Join(root, "romm"), filepath.Join(root, "romm", "compose.yml"), "romm"),
-				project("multi", "/srv/multi", "/srv/multi/a.yml,/srv/multi/b.yml", "x"),
+				multi,
+				{"Names": []string{"/plain"}, "State": "running",
+					"Ports": []map[string]any{{"IP": "0.0.0.0", "PrivatePort": 5432, "PublicPort": 5432, "Type": "tcp"}}},
 			})
 			return
 		}
@@ -273,8 +281,8 @@ func TestSaveCompose(t *testing.T) {
 	}
 
 	next := "services:\n  web:\n    image: nginx:1.27\n"
-	check := decode[map[string]string](t, e.do("POST", "/api/stacks/main-stack/check", body(next, "")))
-	if check["message"] != "chore(main-stack): bump web latest → 1.27" || check["error"] != "" {
+	check := decode[checkResult](t, e.do("POST", "/api/stacks/main-stack/check", body(next, "")))
+	if check.Message != "chore(main-stack): bump web latest → 1.27" || check.Error != "" || len(check.Conflicts) != 0 {
 		t.Errorf("check = %v", check)
 	}
 	bad, _ := json.Marshal(map[string]string{"content": next, "base": cur.Hash, "message": "bump nginx"})
@@ -662,5 +670,39 @@ func TestVisible(t *testing.T) {
 		if err := s.visible(path); (err == nil) != ok {
 			t.Errorf("%s: %v", path, err)
 		}
+	}
+}
+
+func TestConflicts(t *testing.T) {
+	e := newEnv(t, false)
+	romm := `# json: {"services":{"romm":{"image":"romm","container_name":"romm","ports":[{"published":"8080","protocol":"tcp"}]}}}` + "\n"
+	_ = os.WriteFile(filepath.Join(e.root, "romm", "compose.yml"), []byte(romm), 0o644)
+	body, _ := json.Marshal(map[string]string{"name": "romm", "path": filepath.Join(e.root, "romm"), "project": "romm"})
+	if w := e.do("POST", "/api/stacks", string(body)); w.Code != http.StatusCreated {
+		t.Fatalf("adopt: %d %s", w.Code, w.Body)
+	}
+
+	draft := `# json: {"services":{` +
+		`"web":{"image":"nginx","container_name":"plain","ports":[` +
+		`{"published":"8080","protocol":"tcp"},{"published":"9000","protocol":"tcp"},` +
+		`{"host_ip":"127.0.0.1","published":"5432","protocol":"tcp"},{"published":"7000","protocol":"udp"},{"target":80}]},` +
+		`"db":{"image":"postgres","container_name":"romm","ports":[` +
+		`{"published":"9000","protocol":"udp"},{"host_ip":"127.0.0.2","published":"7000","protocol":"udp"}]}}}` + "\n"
+	b, _ := json.Marshal(map[string]string{"content": draft})
+	check := decode[checkResult](t, e.do("POST", "/api/stacks/main-stack/check", string(b)))
+	var got []string
+	for _, c := range check.Conflicts {
+		got = append(got, c.String())
+	}
+	want := []string{
+		"db: port 127.0.0.2:7000/udp is also used by service web in this file",
+		"db: container name romm is also used by stack romm, service romm",
+		"web: port 8080/tcp is also used by stack romm, service romm",
+		"web: port 9000/tcp is also used by container multi-x-1 (compose project multi, not in Hoist)",
+		"web: container name plain is also used by container plain",
+		"web: port 127.0.0.1:5432/tcp is also used by container plain",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("conflicts:\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

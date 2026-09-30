@@ -95,6 +95,16 @@ type Container struct {
 	ConfigHash string `json:"-"`
 	// OneOff marks `compose run` containers, which `up` leaves alone.
 	OneOff bool `json:"-"`
+	// Project is the compose project, when it belongs to one.
+	Project string `json:"-"`
+	// Ports are the host ports a running container publishes.
+	Ports []Port `json:"-"`
+}
+
+type Port struct {
+	IP       string
+	Port     int
+	Protocol string
 }
 
 const (
@@ -108,6 +118,16 @@ const (
 
 // Project lists a compose project's containers, stopped ones included.
 func (c *Client) Project(ctx context.Context, project string) ([]Container, error) {
+	filters, _ := json.Marshal(map[string][]string{"label": {labelProject + "=" + project}})
+	return c.containers(ctx, url.Values{"all": {"1"}, "filters": {string(filters)}})
+}
+
+// Containers lists every container on the host, stopped ones included.
+func (c *Client) Containers(ctx context.Context) ([]Container, error) {
+	return c.containers(ctx, url.Values{"all": {"1"}})
+}
+
+func (c *Client) containers(ctx context.Context, q url.Values) ([]Container, error) {
 	var items []struct {
 		ID      string
 		Names   []string
@@ -117,9 +137,12 @@ func (c *Client) Project(ctx context.Context, project string) ([]Container, erro
 		Status  string
 		Created int64
 		Labels  map[string]string
+		Ports   []struct {
+			IP         string
+			PublicPort int
+			Type       string
+		}
 	}
-	filters, _ := json.Marshal(map[string][]string{"label": {labelProject + "=" + project}})
-	q := url.Values{"all": {"1"}, "filters": {string(filters)}}
 	if err := c.do(ctx, http.MethodGet, "/containers/json", q, nil, &items); err != nil {
 		return nil, err
 	}
@@ -129,11 +152,22 @@ func (c *Client) Project(ctx context.Context, project string) ([]Container, erro
 		if len(it.Names) > 0 {
 			name = strings.TrimPrefix(it.Names[0], "/")
 		}
-		out = append(out, Container{
+		ctr := Container{
 			ID: it.ID, Name: name, Service: it.Labels[labelService], Image: it.Image, ImageID: it.ImageID,
 			State: it.State, Status: it.Status, Created: it.Created,
 			ConfigHash: it.Labels[labelHash], OneOff: it.Labels[labelOneOff] == "True",
-		})
+			Project: it.Labels[labelProject],
+		}
+		for _, p := range it.Ports {
+			if p.PublicPort == 0 {
+				continue
+			}
+			port := Port{IP: p.IP, Port: p.PublicPort, Protocol: p.Type}
+			if !slices.Contains(ctr.Ports, port) {
+				ctr.Ports = append(ctr.Ports, port)
+			}
+		}
+		out = append(out, ctr)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
@@ -163,10 +197,10 @@ func (c *Client) Projects(ctx context.Context) ([]ProjectInfo, error) {
 	}
 	byName := map[string]*ProjectInfo{}
 	for _, it := range items {
-		if it.Labels[labelOneOff] == "True" {
+		name := it.Labels[labelProject]
+		if name == "" || it.Labels[labelOneOff] == "True" {
 			continue
 		}
-		name := it.Labels[labelProject]
 		p := byName[name]
 		if p == nil {
 			p = &ProjectInfo{Name: name, Dir: it.Labels[labelDir], Files: []string{}, Services: []string{}}

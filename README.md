@@ -13,7 +13,9 @@ that idles at about 4 MB of RAM. A lightweight replacement for
 - **Compose editor**: YAML editor, checked with `docker compose config`
   before anything is written, a diff to review, then a commit with a
   Conventional Commits message written for you
-  (`chore(main-stack): bump shelfloom 0.4 → 0.5`) and a push.
+  (`chore(main-stack): bump shelfloom 0.4 → 0.5`) and a push. The review
+  points out host ports and container names the file shares with its own
+  services, other stacks, or containers Hoist doesn't manage.
 - **Environment**: edit the stack's `.env` (kept out of git). Values stay on
   the server until you reveal one; variables the compose file uses but
   aren't set, and ones it doesn't use, are pointed out.

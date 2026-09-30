@@ -4,7 +4,7 @@ import { api } from "../api";
 import { useUnsavedWarning } from "../hooks";
 import { messageProblem } from "../lib";
 import { navigate } from "../router";
-import type { CheckResult, ComposeFile, StackInfo } from "../types";
+import type { CheckResult, ComposeFile, Conflict, StackInfo } from "../types";
 import { CodeEditor } from "./CodeEditor";
 import { Dialog, ErrorNote } from "./ui";
 
@@ -215,6 +215,7 @@ function ReviewDialog(props: {
           <pre class="mono">{check.error}</pre>
         </div>
       )}
+      {check && check.conflicts.length > 0 && <Conflicts conflicts={check.conflicts} />}
       {check && (
         <>
           <CodeEditor value={props.draft} original={props.saved.content} readOnly height="46dvh" />
@@ -241,5 +242,27 @@ function ReviewDialog(props: {
       )}
       {error && <div class="form-error">{error}</div>}
     </Dialog>
+  );
+}
+
+/** Clashes with the rest of the host. They don't block a save: two services
+ * can share a port on different addresses, or one may be meant to replace
+ * the other. */
+export function Conflicts(props: { conflicts: Conflict[] }) {
+  return (
+    <div class="note note-warn conflicts">
+      <strong>
+        {props.conflicts.length === 1 ? "A clash" : `${props.conflicts.length} clashes`} with the
+        rest of this server
+      </strong>
+      <ul>
+        {props.conflicts.map((c) => (
+          <li key={`${c.service}|${c.kind}|${c.what}|${c.with}`}>
+            <span class="mono">{c.service}</span>: {c.kind === "port" ? "port" : "container name"}{" "}
+            <span class="mono">{c.what}</span> is also used by {c.with}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

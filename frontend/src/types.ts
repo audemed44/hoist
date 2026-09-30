@@ -80,9 +80,20 @@ export interface ComposeFile {
   crlf?: boolean;
 }
 
+/** A host port or container name a service shares with something else. */
+export interface Conflict {
+  service: string;
+  kind: "port" | "container_name";
+  /** e.g. 8080/tcp, or the container name. */
+  what: string;
+  /** Who else has it. */
+  with: string;
+}
+
 export interface CheckResult {
   message: string;
   error?: string;
+  conflicts: Conflict[];
 }
 
 export interface SaveResult {
