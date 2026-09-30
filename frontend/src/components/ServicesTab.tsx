@@ -1,6 +1,8 @@
 import { Rocket } from "lucide-preact";
-import type { Tone } from "../lib";
-import type { ServiceState, StackInfo } from "../types";
+import { useState } from "preact/hooks";
+import { updateText, type Tone } from "../lib";
+import type { ServiceState, ServiceUpdate, StackInfo } from "../types";
+import { UpdateDialog } from "./Updates";
 import { Dot } from "./ui";
 
 function stateTone(s: ServiceState): Tone {
@@ -17,6 +19,8 @@ export function ServicesTab(props: {
   onDeploy: (service: string) => void;
 }) {
   const { stack } = props;
+  const [updating, setUpdating] = useState<ServiceUpdate | null>(null);
+  const updates = Object.fromEntries(stack.updates.map((u) => [u.service, u]));
   if (!stack.services.length) {
     return (
       <div class="empty">No services{stack.error ? " (the compose file has an error)" : ""}.</div>
@@ -45,8 +49,20 @@ export function ServicesTab(props: {
               )}
             </span>
           </span>
-          <span class="mono svc-image" title={s.image}>
-            {s.image || <span class="muted">built locally</span>}
+          <span class="svc-image-cell">
+            <span class="mono svc-image" title={s.image}>
+              {s.image || <span class="muted">built locally</span>}
+            </span>
+            {updates[s.name] && (
+              <button
+                class="svc-update"
+                disabled={props.readOnly || !!stack.active}
+                onClick={() => setUpdating(updates[s.name])}
+                title={props.readOnly ? "Read-only" : "Apply this update"}
+              >
+                ↑ {updateText(updates[s.name])}
+              </button>
+            )}
           </span>
           <span class="svc-status">
             {s.container ? s.container.status : <span class="muted">No container</span>}
@@ -77,6 +93,9 @@ export function ServicesTab(props: {
           </span>
         </div>
       ))}
+      {updating && (
+        <UpdateDialog stack={stack.name} update={updating} onClose={() => setUpdating(null)} />
+      )}
     </div>
   );
 }

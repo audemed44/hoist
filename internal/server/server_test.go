@@ -12,11 +12,13 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/audemed44/hoist/internal/compose"
 	"github.com/audemed44/hoist/internal/config"
 	"github.com/audemed44/hoist/internal/docker"
 	"github.com/audemed44/hoist/internal/jobs"
+	"github.com/audemed44/hoist/internal/updates"
 )
 
 const token = "0123456789abcdef0123"
@@ -344,5 +346,100 @@ func TestComposeLineEndings(t *testing.T) {
 	data, _ := os.ReadFile(e.stack.ComposePath())
 	if string(data) != "services:\n  web:\n    image: nginx:1.27\n" {
 		t.Errorf("saved %q", data)
+	}
+}
+
+// withUpdates gives the server a checker primed with a stored result.
+func withUpdates(t *testing.T, e *env, state updates.State) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "updates.json")
+	data, _ := json.Marshal(state)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.srv.Updates = updates.New(e.srv.Config, e.srv.Docker, path)
+}
+
+func waitJob(t *testing.T, e *env, id string) jobs.Job {
+	t.Helper()
+	for range 100 {
+		j := decode[jobs.Job](t, e.do("GET", "/api/jobs/"+id, ""))
+		if j.State != jobs.Running {
+			return j
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("job didn't finish")
+	return jobs.Job{}
+}
+
+func TestApplyUpdate(t *testing.T) {
+	e := newEnv(t, false)
+	now := time.Now()
+	withUpdates(t, e, updates.State{CheckedAt: &now, Stacks: map[string][]updates.Service{"main-stack": {
+		{Service: "web", Image: "nginx", Policy: "off", Latest: &updates.Candidate{Tag: "1.27", Bump: "major"}},
+	}}})
+	info := decode[StackInfo](t, e.do("GET", "/api/stacks/main-stack", ""))
+	if info.Counts.Updates != 1 || info.Updates[0].Latest.Tag != "1.27" {
+		t.Fatalf("stack updates = %+v", info.Updates)
+	}
+	if w := e.do("POST", "/api/stacks/main-stack/services/web/update", `{"tag":"9.9"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("a tag the check didn't find: %d", w.Code)
+	}
+	w := e.do("POST", "/api/stacks/main-stack/services/web/update", `{"tag":"1.27"}`)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("apply: %d %s", w.Code, w.Body)
+	}
+	job := waitJob(t, e, decode[jobs.Job](t, w).ID)
+	if job.State != jobs.Done || len(job.Services) != 1 || job.Services[0] != "web" || job.Commit == "" {
+		t.Errorf("job = %+v", job)
+	}
+	data, _ := os.ReadFile(e.stack.ComposePath())
+	if !strings.Contains(string(data), "image: nginx:1.27") {
+		t.Errorf("compose file = %s", data)
+	}
+	history := decode[[]map[string]any](t, e.do("GET", "/api/stacks/main-stack/history", ""))
+	if history[0]["subject"] != "chore(main-stack): bump web latest → 1.27" {
+		t.Errorf("commit = %v", history[0]["subject"])
+	}
+	if info := decode[StackInfo](t, e.do("GET", "/api/stacks/main-stack", "")); info.Counts.Updates != 0 {
+		t.Errorf("the applied update is still offered: %+v", info.Updates)
+	}
+}
+
+func TestAutoUpdate(t *testing.T) {
+	e := newEnv(t, false)
+	notified := make(chan map[string]string, 4)
+	apprise := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		notified <- body
+	}))
+	defer apprise.Close()
+	e.srv.Config.Updates.Notify = apprise.URL
+	state := updates.State{Stacks: map[string][]updates.Service{"main-stack": {
+		{Service: "web", Image: "nginx", Policy: "minor", Latest: &updates.Candidate{Tag: "2.0", Bump: "major"},
+			Allowed: &updates.Candidate{Tag: "1.1", Bump: "minor"}},
+		{Service: "db", Image: "postgres", Policy: "digest", NewImage: true},
+		{Service: "cache", Image: "redis", Policy: "off", NewImage: true},
+	}}}
+	withUpdates(t, e, state)
+	e.srv.autoUpdate(state)
+	jobsList := decode[[]jobs.Job](t, e.do("GET", "/api/jobs?stack=main-stack", ""))
+	if len(jobsList) != 1 || jobsList[0].Trigger != "auto" || strings.Join(jobsList[0].Services, ",") != "db,web" {
+		t.Fatalf("jobs = %+v", jobsList)
+	}
+	waitJob(t, e, jobsList[0].ID)
+	data, _ := os.ReadFile(e.stack.ComposePath())
+	if !strings.Contains(string(data), "image: nginx:1.1") {
+		t.Errorf("web wasn't bumped within its policy: %s", data)
+	}
+	select {
+	case n := <-notified:
+		if n["type"] != "success" || n["title"] != "Hoist: updated main-stack" {
+			t.Errorf("notification = %v", n)
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("no notification")
 	}
 }

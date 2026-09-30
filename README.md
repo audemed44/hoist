@@ -21,6 +21,10 @@ that idles at about 4 MB of RAM. A lightweight replacement for
   any of them in the editor to roll back.
 - **Git**: ahead/behind the remote, pull (fast-forward only), push, and
   commit edits made outside Hoist.
+- **Update checks**: every few hours Hoist asks the registries, without
+  pulling, whether a tag now points to a newer image and whether a pinned
+  version has newer releases. Apply one with a click (the tag bump is
+  committed like any edit), or let a policy apply them for you.
 - **Self-update**: Hoist can deploy its own stack. A short-lived helper
   container runs that deploy, so it finishes while Hoist is replaced.
 - **Foyer**: serves a card in the
@@ -69,6 +73,39 @@ stacks:
   of git.
 
 Then open Hoist and sign in with `HOIST_TOKEN`.
+
+### Updates
+
+```yaml
+updates:
+  every: 6h        # how often to check; "off" checks only when you ask
+  auto: "off"      # the default policy (below)
+  notify: http://apprise-api:8000/notify/hoist   # optional Apprise API URL
+
+stacks:
+  - name: main-stack
+    path: /home/you/homelab/main-stack
+    updates:
+      auto: digest           # this stack's policy
+      services:
+        shelfloom: minor     # and one service's
+```
+
+- **What's checked**: for every service, whether its tag (e.g. `latest`)
+  now points to a different image than the one running; and for version
+  tags (`1.2.3`, `v1.2`, `5.0.1-ls300`), which newer versions exist with
+  the same shape (an `-alpine` tag only moves to `-alpine` tags, release
+  candidates are ignored). Images pinned by digest and ones built locally
+  are skipped.
+- **Policies**: `off` only reports. `digest` redeploys services whose tag
+  got a new image. `patch` and `minor` also bump pinned versions that far:
+  the tag is changed in the compose file, committed
+  (`chore(main-stack): bump shelfloom 0.4.1 → 0.4.2`), pushed and deployed.
+  Major versions are never applied automatically.
+- A version is only bumped when the image is written out in the compose
+  file on one line; a tag set through `${VAR}` is reported but left alone.
+- With `notify` set, Hoist posts each automatic update's result, and any
+  failure, to Apprise.
 
 ### Pushing with a deploy key
 

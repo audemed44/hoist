@@ -1,4 +1,4 @@
-import type { Change, GitStatus, Job, JobResult, StackInfo } from "./types";
+import type { Change, GitStatus, Job, JobResult, ServiceUpdate, StackInfo } from "./types";
 
 /** Server settings the whole UI needs; filled in from the session. */
 export const settings = { conventional: true };
@@ -92,4 +92,22 @@ export function messageProblem(message: string): string {
     return "Use Conventional Commits: <type>(<scope>): <summary>, e.g. chore(main-stack): bump shelfloom 0.4 → 0.5";
   }
   return "";
+}
+
+/** "6h0m0s" → "6h", "1h30m0s" → "1h30m". */
+export function shortDuration(d: string): string {
+  return d.replace(/0s$/, "").replace(/(\d+h)0m$/, "$1");
+}
+
+/** One line for a service's update, e.g. "0.4.1 → 0.5.0" or "new image". */
+export function updateText(u: ServiceUpdate): string {
+  if (u.latest) return `${tagOf(u.image)} → ${u.latest.tag}`;
+  if (u.new_image) return "new image";
+  return "";
+}
+
+export function tagOf(image: string): string {
+  const slash = image.lastIndexOf("/");
+  const colon = image.lastIndexOf(":");
+  return colon > slash ? image.slice(colon + 1) : "latest";
 }

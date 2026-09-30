@@ -9,6 +9,7 @@ import type {
   SaveResult,
   Session,
   StackInfo,
+  UpdatesInfo,
 } from "./types";
 
 export class ApiError extends Error {
@@ -81,6 +82,14 @@ export const api = {
 
   deploy: (name: string, services?: string[]) =>
     request<Job>(`${stack(name)}/deploy`, json("POST", { services: services ?? [] })),
+  updates: () => request<UpdatesInfo>("/api/updates"),
+  checkUpdates: () => request<void>("/api/updates/check", { method: "POST" }),
+  /** Bumps a service to tag (commit and deploy), or without a tag pulls its new image. */
+  applyUpdate: (stackName: string, service: string, tag?: string) =>
+    request<Job>(
+      `${stack(stackName)}/services/${encodeURIComponent(service)}/update`,
+      json("POST", { tag: tag ?? "" }),
+    ),
   jobs: (stackName?: string, limit = 30) =>
     request<Job[]>(
       `/api/jobs?limit=${limit}${stackName ? `&stack=${encodeURIComponent(stackName)}` : ""}`,

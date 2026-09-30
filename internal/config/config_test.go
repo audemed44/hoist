@@ -84,3 +84,43 @@ func TestProjectName(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdatePolicies(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "a", "compose.yml"), "services: {}\n")
+	path := filepath.Join(dir, "hoist.yaml")
+	write(t, path, `
+updates:
+  every: 12h
+  auto: digest
+stacks:
+  - name: a
+    path: `+filepath.Join(dir, "a")+`
+    updates:
+      auto: patch
+      services:
+        db: "off"
+  - name: b
+    path: `+filepath.Join(dir, "a")+`
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := cfg.Stack("a")
+	b, _ := cfg.Stack("b")
+	if cfg.Updates.Interval().Hours() != 12 || cfg.Policy(a, "web") != "patch" || cfg.Policy(a, "db") != "off" || cfg.Policy(b, "x") != "digest" {
+		t.Errorf("interval %v, policies %s %s %s", cfg.Updates.Interval(), cfg.Policy(a, "web"), cfg.Policy(a, "db"), cfg.Policy(b, "x"))
+	}
+	for _, bad := range []string{"updates: {every: 1m}", "updates: {auto: major}", "updates: {every: soon}"} {
+		write(t, path, bad+"\nstacks: [{name: a, path: "+filepath.Join(dir, "a")+"}]\n")
+		if _, err := Load(path); err == nil {
+			t.Errorf("%s: expected an error", bad)
+		}
+	}
+	write(t, path, "stacks: [{name: a, path: "+filepath.Join(dir, "a")+"}]\n")
+	cfg, _ = Load(path)
+	if cfg.Updates.Interval().Hours() != 6 || cfg.Updates.Auto != "off" {
+		t.Errorf("defaults: %v %q", cfg.Updates.Interval(), cfg.Updates.Auto)
+	}
+}

@@ -24,6 +24,7 @@ import (
 	"github.com/audemed44/hoist/internal/docker"
 	"github.com/audemed44/hoist/internal/jobs"
 	"github.com/audemed44/hoist/internal/server"
+	"github.com/audemed44/hoist/internal/updates"
 	"github.com/audemed44/hoist/web"
 )
 
@@ -77,7 +78,8 @@ func main() {
 		panic(err)
 	}
 	readOnly := os.Getenv("HOIST_READ_ONLY") == "true" || os.Getenv("HOIST_READ_ONLY") == "1"
-	app := server.New(server.Options{Config: cfg, Docker: dock, Jobs: store, Token: token, ReadOnly: readOnly, Web: dist})
+	checker := updates.New(cfg, dock, filepath.Join(configDir, "updates.json"))
+	app := server.New(server.Options{Config: cfg, Docker: dock, Jobs: store, Updates: checker, Token: token, ReadOnly: readOnly, Web: dist})
 	srv := &http.Server{
 		Addr:              ":" + env("HOIST_PORT", "8080"),
 		Handler:           app.Handler(),
@@ -85,6 +87,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go app.RunUpdates(ctx)
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)

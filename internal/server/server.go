@@ -16,12 +16,14 @@ import (
 	"github.com/audemed44/hoist/internal/config"
 	"github.com/audemed44/hoist/internal/docker"
 	"github.com/audemed44/hoist/internal/jobs"
+	"github.com/audemed44/hoist/internal/updates"
 )
 
 type Options struct {
 	Config   *config.Config
 	Docker   *docker.Client
 	Jobs     *jobs.Store
+	Updates  *updates.Checker
 	Token    string
 	ReadOnly bool
 	Web      fs.FS
@@ -63,6 +65,9 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/stacks/{name}/git/push", s.writable(s.gitPush))
 	api.HandleFunc("POST /api/stacks/{name}/git/commit", s.writable(s.gitCommit))
 	api.HandleFunc("POST /api/stacks/{name}/deploy", s.writable(s.postDeploy))
+	api.HandleFunc("GET /api/updates", s.getUpdates)
+	api.HandleFunc("POST /api/updates/check", s.postCheck)
+	api.HandleFunc("POST /api/stacks/{name}/services/{service}/update", s.writable(s.applyUpdate))
 	api.HandleFunc("GET /api/jobs", s.listJobs)
 	api.HandleFunc("GET /api/jobs/{id}", s.getJob)
 	api.HandleFunc("GET /api/jobs/{id}/log", s.jobLog)

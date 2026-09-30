@@ -18,6 +18,7 @@ import (
 	"github.com/audemed44/hoist/internal/envfile"
 	"github.com/audemed44/hoist/internal/gitrepo"
 	"github.com/audemed44/hoist/internal/jobs"
+	"github.com/audemed44/hoist/internal/updates"
 )
 
 // fetchAge is how stale the remote-tracking branch may get before a page
@@ -61,6 +62,7 @@ type Counts struct {
 	Services int `json:"services"`
 	Running  int `json:"running"`
 	Pending  int `json:"pending"` // services a deploy would change
+	Updates  int `json:"updates"` // services with a newer image or version
 }
 
 type StackInfo struct {
@@ -77,6 +79,8 @@ type StackInfo struct {
 	GitError string          `json:"git_error,omitempty"`
 	Active   *jobs.Job       `json:"active,omitempty"`
 	Last     *jobs.Job       `json:"last,omitempty"`
+	// Updates are the services the last update check found updates for.
+	Updates []updates.Service `json:"updates"`
 }
 
 func (s *Server) stackInfo(ctx context.Context, st config.Stack, fetch bool) StackInfo {
@@ -129,6 +133,14 @@ func (s *Server) stackInfo(ctx context.Context, st config.Stack, fetch bool) Sta
 			info.Counts.Running++
 		}
 	}
+	if s.Updates != nil {
+		state, _ := s.Updates.State()
+		info.Updates = state.Sorted(st.Name)
+	}
+	if info.Updates == nil {
+		info.Updates = []updates.Service{}
+	}
+	info.Counts.Updates = len(info.Updates)
 	info.Active = s.active(st.Name)
 	info.Last = s.Jobs.Latest(st.Name)
 	wg.Wait()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ago, gitLabel, isConventional, resultSummary } from "./lib";
+import { ago, gitLabel, isConventional, resultSummary, shortDuration, updateText } from "./lib";
 import { href, parseRoute } from "./router";
 import type { GitStatus } from "./types";
 
@@ -76,5 +76,23 @@ describe("isConventional", () => {
     expect(isConventional("feat!: drop kopia")).toBe(true);
     expect(isConventional("main-stack: bump shelfloom")).toBe(false);
     expect(isConventional("feat(Main): x")).toBe(false);
+  });
+});
+
+describe("updates", () => {
+  it("describes them", () => {
+    expect(shortDuration("6h0m0s")).toBe("6h");
+    expect(shortDuration("1h30m0s")).toBe("1h30m");
+    expect(
+      updateText({
+        service: "a",
+        image: "ghcr.io/x/a:0.4.1",
+        policy: "off",
+        latest: { tag: "0.5.0", bump: "minor" },
+      }),
+    ).toBe("0.4.1 → 0.5.0");
+    expect(
+      updateText({ service: "b", image: "localhost:5000/b", policy: "off", new_image: true }),
+    ).toBe("new image");
   });
 });

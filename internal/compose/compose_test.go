@@ -3,6 +3,7 @@ package compose
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/audemed44/hoist/internal/docker"
@@ -159,5 +160,26 @@ func TestLineEndings(t *testing.T) {
 	}
 	if !UsesCRLF(crlf) || UsesCRLF(ToLF(crlf)) || UsesCRLF(nil) {
 		t.Error("UsesCRLF")
+	}
+}
+
+func TestBumpImage(t *testing.T) {
+	file := []byte("services:\n  a:\n    image: \"ghcr.io/me/a:0.4.1\" # pinned\n  b:\n    image: nginx:1.27\n  c:\n    image: app:${TAG}\n")
+	out, ref, err := BumpImage(file, "ghcr.io/me/a:0.4.1", "0.5.0")
+	if err != nil || ref != "ghcr.io/me/a:0.5.0" || !strings.Contains(string(out), `image: "ghcr.io/me/a:0.5.0" # pinned`) {
+		t.Fatalf("bump = %q, %q, %v", out, ref, err)
+	}
+	if strings.Count(string(out), "0.4.1") != 0 || !strings.Contains(string(out), "nginx:1.27") {
+		t.Errorf("changed too much: %s", out)
+	}
+	if _, _, err := BumpImage(file, "app:1.0", "1.1"); err == nil {
+		t.Error("an image set by a variable should be refused")
+	}
+	twice := []byte("services:\n  a: {image: x}\n  b:\n    image: nginx:1\n  c:\n    image: nginx:1\n")
+	if _, _, err := BumpImage(twice, "nginx:1", "2"); err == nil {
+		t.Error("an image on two lines should be refused")
+	}
+	if WithTag("localhost:5000/app", "2") != "localhost:5000/app:2" {
+		t.Error("WithTag with a registry port")
 	}
 }

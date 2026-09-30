@@ -255,3 +255,13 @@ func (c *Client) RunHelper(ctx context.Context, self *Self, name string, entrypo
 	}
 	return created.ID, nil
 }
+
+// RepoDigests returns an image's registry digests ("repo@sha256:…"), which
+// docker records when it pulls. Locally built images have none.
+func (c *Client) RepoDigests(ctx context.Context, image string) ([]string, error) {
+	var info struct{ RepoDigests []string }
+	if err := c.do(ctx, http.MethodGet, "/images/"+url.PathEscape(image)+"/json", nil, nil, &info); err != nil {
+		return nil, err
+	}
+	return info.RepoDigests, nil
+}

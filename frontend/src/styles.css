@@ -865,6 +865,10 @@ a.note:hover {
   justify-content: flex-end;
 }
 @media (max-width: 860px) {
+  .svc-image-cell {
+    grid-column: 1;
+    padding-left: 19px;
+  }
   .svc-row {
     grid-template-columns: minmax(0, 1fr) auto 40px;
     gap: 4px 12px;
@@ -1015,4 +1019,58 @@ a.note:hover {
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--fg-2);
+}
+
+/* ── Updates ────────────────────────────────────────────────────────────── */
+
+.updates-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+.chip-update {
+  border-color: rgb(var(--good-rgb) / 0.5);
+  color: var(--good);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+a.chip-update:hover {
+  border-color: var(--good);
+}
+.svc-image-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+.svc-update {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--good);
+  padding: 1px 6px;
+  border: 1px solid rgb(var(--good-rgb) / 0.4);
+}
+.svc-update:hover:not(:disabled) {
+  border-color: var(--good);
+}
+.svc-update:disabled {
+  cursor: default;
+  opacity: 0.8;
+}
+.plan .check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.plan .check .chip {
+  min-width: 0;
 }
