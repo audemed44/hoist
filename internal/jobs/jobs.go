@@ -36,8 +36,11 @@ type Job struct {
 	// Trigger is where the deploy came from: "ui", "api" or "foyer".
 	Trigger string `json:"trigger"`
 	// Self is set when Hoist deployed its own stack through the helper.
-	Self   bool    `json:"self,omitempty"`
-	Commit string  `json:"commit,omitempty"`
+	Self   bool   `json:"self,omitempty"`
+	Commit string `json:"commit,omitempty"`
+	// Dirty is set when the compose file had uncommitted changes, so what
+	// was deployed isn't exactly Commit.
+	Dirty  bool    `json:"dirty,omitempty"`
 	Result *Result `json:"result,omitempty"`
 	Error  string  `json:"error,omitempty"`
 }

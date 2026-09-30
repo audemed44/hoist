@@ -97,7 +97,12 @@ export function JobPage(props: { id: string }) {
           {job.finished && <span>took {duration(job)}</span>}
           <span>from {job.trigger}</span>
           {job.services?.length ? <span>only {job.services.join(", ")}</span> : null}
-          {job.commit && <span class="mono">at {job.commit}</span>}
+          {job.commit && (
+            <span class="mono">
+              at {job.commit}
+              {job.dirty && " + uncommitted changes"}
+            </span>
+          )}
           {job.self && <span>ran in a helper container</span>}
         </div>
         {job.result && job.result.updated.length > 0 && (

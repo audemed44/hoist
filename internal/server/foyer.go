@@ -86,6 +86,8 @@ func (s *Server) foyerWidget(w http.ResponseWriter, r *http.Request) {
 			item.Caption = "compose error"
 		case info.Active != nil:
 			item.Caption = "deploying…"
+		case info.Git != nil && info.Git.Modified:
+			item.Caption = "uncommitted changes"
 		case info.Last != nil && info.Last.State == jobs.Failed:
 			item.Caption = "deploy failed " + ago(info.Last.Started)
 		case info.Last != nil:

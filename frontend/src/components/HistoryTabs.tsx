@@ -116,7 +116,7 @@ export function DeploysTab(props: { stack: StackInfo }) {
               {ago(j.started)}
               {j.finished && ` · took ${duration(j)}`} · from {j.trigger}
               {j.services?.length ? ` · only ${j.services.join(", ")}` : ""}
-              {j.commit && ` · at ${j.commit}`}
+              {j.commit && ` · at ${j.commit}${j.dirty ? " + uncommitted changes" : ""}`}
             </span>
           </span>
         </a>

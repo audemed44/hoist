@@ -322,3 +322,27 @@ func isHash(s string) bool {
 	}
 	return true
 }
+
+// Committed returns a file as it is in HEAD.
+func (r *Repo) Committed(ctx context.Context, file string) ([]byte, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rel, err := r.Rel(file)
+	if err != nil {
+		return nil, err
+	}
+	out, err := run(ctx, r.Root, "show", "HEAD:"+rel)
+	return []byte(out), err
+}
+
+// Restore puts a file back as it is in HEAD, throwing away local edits.
+func (r *Repo) Restore(ctx context.Context, file string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rel, err := r.Rel(file)
+	if err != nil {
+		return err
+	}
+	_, err = run(ctx, r.Root, "checkout", "HEAD", "--", rel)
+	return err
+}

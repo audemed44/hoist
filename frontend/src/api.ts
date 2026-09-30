@@ -2,6 +2,7 @@ import type {
   CheckResult,
   Commit,
   ComposeFile,
+  DriftInfo,
   EnvChange,
   EnvInfo,
   GitStatus,
@@ -77,6 +78,8 @@ export const api = {
 
   git: (name: string, action: "fetch" | "pull" | "push") =>
     request<GitStatus>(`${stack(name)}/git/${action}`, { method: "POST" }),
+  drift: (name: string) => request<DriftInfo>(`${stack(name)}/drift`),
+  discard: (name: string) => request<GitStatus>(`${stack(name)}/git/discard`, { method: "POST" }),
   commit: (name: string, message: string) =>
     request<GitStatus>(`${stack(name)}/git/commit`, json("POST", { message })),
 

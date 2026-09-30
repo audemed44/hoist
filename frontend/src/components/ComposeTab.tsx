@@ -82,6 +82,13 @@ export function ComposeTab(props: { stack: StackInfo; readOnly: boolean; onSaved
         )}
       </div>
       {error && <ErrorNote>{error}</ErrorNote>}
+      {props.stack.git?.modified && !props.readOnly && (
+        <p class="note note-warn">
+          This is the file as it is on the server, including changes that aren't committed. Saving
+          commits them together with your edit; to keep them apart, commit or discard them first
+          (Review changes, above).
+        </p>
+      )}
       <CodeEditor
         value={draft}
         docKey={revision}

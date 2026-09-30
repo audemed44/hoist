@@ -64,6 +64,8 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/stacks/{name}/git/pull", s.writable(s.gitPull))
 	api.HandleFunc("POST /api/stacks/{name}/git/push", s.writable(s.gitPush))
 	api.HandleFunc("POST /api/stacks/{name}/git/commit", s.writable(s.gitCommit))
+	api.HandleFunc("GET /api/stacks/{name}/drift", s.getDrift)
+	api.HandleFunc("POST /api/stacks/{name}/git/discard", s.writable(s.gitDiscard))
 	api.HandleFunc("POST /api/stacks/{name}/deploy", s.writable(s.postDeploy))
 	api.HandleFunc("GET /api/updates", s.getUpdates)
 	api.HandleFunc("POST /api/updates/check", s.postCheck)

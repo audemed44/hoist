@@ -50,6 +50,8 @@ export interface Job {
   trigger: string;
   self?: boolean;
   commit?: string;
+  /** The compose file had uncommitted changes when this deployed. */
+  dirty?: boolean;
   result?: JobResult;
   error?: string;
 }
@@ -149,4 +151,12 @@ export interface UpdatesInfo {
   auto: Policy;
   count: number;
   stacks: Record<string, ServiceUpdate[]>;
+}
+
+/** A compose file changed outside Hoist, next to its last commit. */
+export interface DriftInfo {
+  committed: ComposeFile;
+  current: ComposeFile;
+  /** A suggested commit message for the difference. */
+  message: string;
 }

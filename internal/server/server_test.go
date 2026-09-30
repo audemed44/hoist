@@ -443,3 +443,27 @@ func TestAutoUpdate(t *testing.T) {
 		t.Error("no notification")
 	}
 }
+
+func TestDrift(t *testing.T) {
+	e := newEnv(t, false)
+	edited := "services:\n  web:\n    image: nginx:1.27\n"
+	_ = os.WriteFile(e.stack.ComposePath(), []byte(edited), 0o644)
+	d := decode[driftResponse](t, e.do("GET", "/api/stacks/main-stack/drift", ""))
+	if d.Current.Content != edited || !strings.Contains(d.Committed.Content, "image: nginx\n") ||
+		d.Message != "chore(main-stack): bump web latest → 1.27" {
+		t.Fatalf("drift = %+v", d)
+	}
+	// A deploy now records that it included uncommitted changes.
+	job := decode[jobs.Job](t, e.do("POST", "/api/stacks/main-stack/deploy", ""))
+	if !job.Dirty {
+		t.Errorf("job = %+v", job)
+	}
+	waitJob(t, e, job.ID)
+	if w := e.do("POST", "/api/stacks/main-stack/git/discard", ""); w.Code != http.StatusOK {
+		t.Fatalf("discard: %d %s", w.Code, w.Body)
+	}
+	data, _ := os.ReadFile(e.stack.ComposePath())
+	if string(data) != "services:\n  web:\n    image: nginx\n" {
+		t.Errorf("after discard: %q", data)
+	}
+}

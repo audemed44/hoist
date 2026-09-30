@@ -484,6 +484,46 @@ func (s *Server) gitPush(w http.ResponseWriter, r *http.Request) {
 	s.gitAction(w, r, func(ctx context.Context, repo *gitrepo.Repo, _ config.Stack) error { return repo.Push(ctx) })
 }
 
+// driftResponse is a compose file edited outside Hoist next to its last
+// commit, with a message for committing the difference.
+type driftResponse struct {
+	Committed composeFile `json:"committed"`
+	Current   composeFile `json:"current"`
+	Message   string      `json:"message"`
+}
+
+func (s *Server) getDrift(w http.ResponseWriter, r *http.Request) {
+	st, ok := s.stack(w, r)
+	if !ok {
+		return
+	}
+	repo := s.repo(w, r, st)
+	if repo == nil {
+		return
+	}
+	head, err := repo.Committed(r.Context(), st.ComposePath())
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	current, err := os.ReadFile(st.ComposePath())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, driftResponse{
+		Committed: newComposeFile(head), Current: newComposeFile(current),
+		Message: compose.Summary(st.Name, head, current),
+	})
+}
+
+// gitDiscard throws away edits made outside Hoist.
+func (s *Server) gitDiscard(w http.ResponseWriter, r *http.Request) {
+	s.gitAction(w, r, func(ctx context.Context, repo *gitrepo.Repo, st config.Stack) error {
+		return repo.Restore(ctx, st.ComposePath())
+	})
+}
+
 // gitCommit commits a compose file edited outside Hoist.
 func (s *Server) gitCommit(w http.ResponseWriter, r *http.Request) {
 	var body struct {
