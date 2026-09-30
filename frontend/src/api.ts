@@ -1,8 +1,11 @@
 import type {
+  AddResult,
+  AddStack,
   AuditEvent,
   CheckResult,
   Commit,
   ComposeFile,
+  Discovery,
   DriftInfo,
   EnvChange,
   EnvInfo,
@@ -76,6 +79,8 @@ export const api = {
 
   stacks: () => request<StackInfo[]>("/api/stacks"),
   stackNames: () => request<string[]>("/api/stack-names"),
+  discover: () => request<Discovery>("/api/discover"),
+  addStack: (body: AddStack) => request<AddResult>("/api/stacks", json("POST", body)),
   stack: (name: string) => request<StackInfo>(stack(name)),
   compose: (name: string) => request<ComposeFile>(`${stack(name)}/compose`),
   check: (name: string, content: string) =>

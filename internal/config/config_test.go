@@ -124,3 +124,103 @@ stacks:
 		t.Errorf("defaults: %v %q", cfg.Updates.Interval(), cfg.Updates.Auto)
 	}
 }
+
+func TestAddStack(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "main", "docker-compose.yml"), "services: {}\n")
+	write(t, filepath.Join(dir, "romm", "compose.yml"), "services: {}\n")
+	write(t, filepath.Join(dir, "other", "stack.yml"), "services: {}\n")
+	cfgPath := filepath.Join(dir, "hoist.yaml")
+	original := `# Hoist's config
+git:
+  name: Hoist
+  email: hoist@localhost
+
+stacks:
+  # the big one
+  - name: main-stack
+    path: ` + filepath.Join(dir, "main") + `
+    project: main-server # not the folder name
+`
+	write(t, cfgPath, original)
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := cfg.AddStack(Stack{Name: "romm", Path: filepath.Join(dir, "romm")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.File != "compose.yml" || st.Project != "romm" {
+		t.Errorf("added = %+v", st)
+	}
+	if _, err := cfg.AddStack(Stack{Name: "other", Path: filepath.Join(dir, "other"), File: "stack.yml", Project: "other"}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(cfgPath)
+	want := original + `  - name: romm
+    path: ` + filepath.Join(dir, "romm") + `
+    project: romm
+  - name: other
+    path: ` + filepath.Join(dir, "other") + `
+    file: stack.yml
+    project: other
+`
+	if string(data) != want {
+		t.Errorf("hoist.yaml =\n%s\nwant\n%s", data, want)
+	}
+	again, err := Load(cfgPath)
+	if err != nil || len(again.List()) != 3 || len(cfg.List()) != 3 {
+		t.Fatalf("reload: %v %+v", err, again)
+	}
+
+	for _, bad := range []Stack{
+		{Name: "romm", Path: filepath.Join(dir, "other"), File: "stack.yml", Project: "x"},     // name taken
+		{Name: "romm2", Path: filepath.Join(dir, "romm"), Project: "x"},                        // same file
+		{Name: "romm3", Path: filepath.Join(dir, "other"), File: "stack.yml", Project: "romm"}, // project taken
+		{Name: "Bad Name", Path: filepath.Join(dir, "other")},
+		{Name: "nofile", Path: filepath.Join(dir, "missing")},
+	} {
+		if _, err := cfg.AddStack(bad); err == nil {
+			t.Errorf("%+v was accepted", bad)
+		}
+	}
+	if data2, _ := os.ReadFile(cfgPath); string(data2) != want {
+		t.Error("a refused stack changed hoist.yaml")
+	}
+}
+
+func TestAddStackLayouts(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "a", "compose.yml"), "services: {}\n")
+	write(t, filepath.Join(dir, "my stack", "compose.yml"), "services: {}\n")
+	for name, tc := range map[string]struct{ in, want string }{
+		"stacks first, then comments and another key": {
+			in: "stacks:\n- name: a\n  path: " + filepath.Join(dir, "a") + "\n\n# checks\nupdates:\n  every: 6h\n",
+			want: "stacks:\n- name: a\n  path: " + filepath.Join(dir, "a") + "\n" +
+				"- name: my-stack\n  path: " + filepath.Join(dir, "my stack") + "\n  project: mystack\n" +
+				"\n# checks\nupdates:\n  every: 6h\n",
+		},
+		"no trailing newline": {
+			in: "stacks:\n    -   name: a\n        path: " + filepath.Join(dir, "a"),
+			want: "stacks:\n    -   name: a\n        path: " + filepath.Join(dir, "a") + "\n" +
+				"    -   name: my-stack\n        path: " + filepath.Join(dir, "my stack") + "\n        project: mystack\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "hoist.yaml")
+			write(t, path, tc.in)
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := cfg.AddStack(Stack{Name: "my-stack", Path: filepath.Join(dir, "my stack")}); err != nil {
+				t.Fatal(err)
+			}
+			data, _ := os.ReadFile(path)
+			if string(data) != tc.want {
+				t.Errorf("got\n%s\nwant\n%s", data, tc.want)
+			}
+		})
+	}
+}

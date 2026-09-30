@@ -91,7 +91,7 @@ func (s *Server) checkUpdates(ctx context.Context, apply bool) {
 // autoUpdate applies what each service's policy allows: new images behind
 // the same tag (digest and up), and version bumps within patch or minor.
 func (s *Server) autoUpdate(st updates.State) {
-	for _, stack := range s.Config.Stacks {
+	for _, stack := range s.Config.List() {
 		var bumps []bump
 		var pull []string
 		for _, u := range st.Stacks[stack.Name] {

@@ -165,3 +165,35 @@ func TestCommittedAndRestore(t *testing.T) {
 		t.Errorf("after restore: %q, modified %v", data, st.Modified)
 	}
 }
+
+func TestIgnoredAndTrack(t *testing.T) {
+	ctx := context.Background()
+	a, _ := setup(t)
+	// An allowlist: only compose.yml at the top is tracked.
+	_ = os.WriteFile(filepath.Join(a, ".gitignore"), []byte("/*\n!/.gitignore\n!/compose.yml\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(a, "romm"), 0o755)
+	file := filepath.Join(a, "romm", "compose.yml")
+	_ = os.WriteFile(file, []byte("services: {}\n"), 0o644)
+	r, _ := Open(ctx, a)
+
+	if ignored, err := r.Ignored(ctx, filepath.Join(a, "compose.yml")); err != nil || ignored {
+		t.Errorf("tracked file: %v %v", ignored, err)
+	}
+	ignored, err := r.Ignored(ctx, file)
+	if err != nil || !ignored {
+		t.Fatalf("romm/compose.yml: %v %v", ignored, err)
+	}
+	if _, err := r.Commit(ctx, file, "feat(romm): add stack", Author{"Hoist", "h@h"}); err == nil {
+		t.Fatal("committed an ignored file without Track")
+	}
+	if err := r.Track(ctx, file); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Commit(ctx, file, "feat(romm): add stack", Author{"Hoist", "h@h"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(file, []byte("services: {web: {image: nginx}}\n"), 0o644)
+	if _, err := r.Commit(ctx, file, "chore(romm): edit", Author{"Hoist", "h@h"}); err != nil {
+		t.Fatalf("second commit of a tracked, ignored file: %v", err)
+	}
+}

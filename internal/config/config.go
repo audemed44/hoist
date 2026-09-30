@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -84,7 +86,12 @@ var policies = map[string]bool{"off": true, "digest": true, "patch": true, "mino
 type Config struct {
 	Git     Git     `yaml:"git" json:"git"`
 	Updates Updates `yaml:"updates" json:"updates"`
-	Stacks  []Stack `yaml:"stacks" json:"stacks"`
+	// Stacks is read through List and Stack once the server runs, since
+	// AddStack can change it.
+	Stacks []Stack `yaml:"stacks" json:"stacks"`
+
+	mu   sync.RWMutex
+	path string // where it was loaded from
 }
 
 // Policy is the update policy for one service of a stack.
@@ -100,7 +107,16 @@ func (c *Config) Policy(st Stack, service string) string {
 	return c.Updates.Auto
 }
 
+// List returns the stacks in config order.
+func (c *Config) List() []Stack {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return slices.Clone(c.Stacks)
+}
+
 func (c *Config) Stack(name string) (Stack, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	for _, s := range c.Stacks {
 		if s.Name == name {
 			return s, true
@@ -135,6 +151,7 @@ func Load(path string) (*Config, error) {
 	if err := cfg.normalise(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	cfg.path = path
 	return &cfg, nil
 }
 
@@ -169,44 +186,202 @@ func (c *Config) normalise() error {
 	seen := map[string]bool{}
 	for i := range c.Stacks {
 		s := &c.Stacks[i]
-		if !nameRe.MatchString(s.Name) {
-			return fmt.Errorf("stack %q: name must be lowercase letters, digits, - and _", s.Name)
+		if err := s.normalise(); err != nil {
+			return err
 		}
 		if seen[s.Name] {
 			return fmt.Errorf("stack %q is listed twice", s.Name)
 		}
 		seen[s.Name] = true
-		if !filepath.IsAbs(s.Path) {
-			return fmt.Errorf("stack %q: path must be absolute (the same path as on the host)", s.Name)
+	}
+	return nil
+}
+
+func (s *Stack) normalise() error {
+	if !nameRe.MatchString(s.Name) {
+		return fmt.Errorf("stack %q: name must be lowercase letters, digits, - and _", s.Name)
+	}
+	if !filepath.IsAbs(s.Path) {
+		return fmt.Errorf("stack %q: path must be absolute (the same path as on the host)", s.Name)
+	}
+	s.Path = filepath.Clean(s.Path)
+	if s.File == "" {
+		s.File = findComposeFile(s.Path)
+	}
+	if s.File == "" {
+		return fmt.Errorf("stack %q: no compose file in %s", s.Name, s.Path)
+	}
+	if strings.Contains(s.File, "/") || strings.HasPrefix(s.File, ".") {
+		return fmt.Errorf("stack %q: file must be a file name inside the stack folder", s.Name)
+	}
+	if s.Project == "" {
+		s.Project = ProjectName(s.Path)
+	}
+	if projectRe.MatchString(s.Project) {
+		return fmt.Errorf("stack %q: project %q must be lowercase letters, digits, - and _", s.Name, s.Project)
+	}
+	if u := s.Updates; u != nil {
+		if u.Auto != "" && !policies[u.Auto] {
+			return fmt.Errorf("stack %q: updates.auto %q should be off, digest, patch or minor", s.Name, u.Auto)
 		}
-		s.Path = filepath.Clean(s.Path)
-		if s.File == "" {
-			s.File = findComposeFile(s.Path)
-		}
-		if s.File == "" {
-			return fmt.Errorf("stack %q: no compose file in %s", s.Name, s.Path)
-		}
-		if strings.Contains(s.File, "/") || strings.HasPrefix(s.File, ".") {
-			return fmt.Errorf("stack %q: file must be a file name inside the stack folder", s.Name)
-		}
-		if s.Project == "" {
-			s.Project = ProjectName(s.Path)
-		}
-		if projectRe.MatchString(s.Project) {
-			return fmt.Errorf("stack %q: project %q must be lowercase letters, digits, - and _", s.Name, s.Project)
-		}
-		if u := s.Updates; u != nil {
-			if u.Auto != "" && !policies[u.Auto] {
-				return fmt.Errorf("stack %q: updates.auto %q should be off, digest, patch or minor", s.Name, u.Auto)
-			}
-			for svc, p := range u.Services {
-				if !policies[p] {
-					return fmt.Errorf("stack %q: updates for %s: %q should be off, digest, patch or minor", s.Name, svc, p)
-				}
+		for svc, p := range u.Services {
+			if !policies[p] {
+				return fmt.Errorf("stack %q: updates for %s: %q should be off, digest, patch or minor", s.Name, svc, p)
 			}
 		}
 	}
 	return nil
+}
+
+// ValidName reports whether name can be a stack's name.
+func ValidName(name string) bool { return nameRe.MatchString(name) }
+
+// DefaultFile is the compose file name compose would pick in dir, or "".
+func DefaultFile(dir string) string { return findComposeFile(dir) }
+
+// AddStack checks st, appends it to hoist.yaml (keeping the file's comments
+// and layout) and to the running config.
+func (c *Config) AddStack(st Stack) (Stack, error) {
+	if err := st.normalise(); err != nil {
+		return st, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, s := range c.Stacks {
+		if s.Name == st.Name {
+			return st, fmt.Errorf("there is already a stack named %s", st.Name)
+		}
+		if s.Project == st.Project {
+			return st, fmt.Errorf("stack %s already uses the compose project %s", s.Name, st.Project)
+		}
+		if s.Path == st.Path && s.File == st.File {
+			return st, fmt.Errorf("stack %s already uses %s", s.Name, st.ComposePath())
+		}
+	}
+	if c.path != "" {
+		if err := appendStack(c.path, st); err != nil {
+			return st, err
+		}
+	}
+	c.Stacks = append(c.Stacks, st)
+	return st, nil
+}
+
+// appendStack adds st to the stacks list in the file at path, as new lines
+// after the list's last entry, so the rest of the file stays as it was. Only
+// name, path, project and a file compose wouldn't find itself are written.
+func appendStack(path string, st Stack) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return fmt.Errorf("%s: expected a mapping at the top", path)
+	}
+	root := doc.Content[0]
+	var list, next *yaml.Node
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value == "stacks" {
+			list = root.Content[i+1]
+			if i+2 < len(root.Content) {
+				next = root.Content[i+2]
+			}
+		}
+	}
+	if list == nil || list.Kind != yaml.SequenceNode || len(list.Content) == 0 || list.Style&yaml.FlowStyle != 0 {
+		return fmt.Errorf("%s: stacks isn't a list Hoist can add to; add %s by hand", path, st.Name)
+	}
+	lines := strings.SplitAfter(string(data), "\n")
+	first := list.Content[0]
+	dash := strings.Index(lines[first.Line-1], "-")
+	if dash < 0 || first.Column-1 <= dash {
+		return fmt.Errorf("%s: unexpected layout of the stacks list; add %s by hand", path, st.Name)
+	}
+	indent := strings.Repeat(" ", first.Column-1)
+
+	entry := [][2]string{{"name", st.Name}, {"path", st.Path}}
+	if findComposeFile(st.Path) != st.File {
+		entry = append(entry, [2]string{"file", st.File})
+	}
+	entry = append(entry, [2]string{"project", st.Project})
+	var add strings.Builder
+	for i, kv := range entry {
+		v, err := yaml.Marshal(kv[1])
+		if err != nil {
+			return err
+		}
+		prefix := indent
+		if i == 0 {
+			prefix = strings.Repeat(" ", dash) + "-" + strings.Repeat(" ", first.Column-2-dash)
+		}
+		add.WriteString(prefix + kv[0] + ": " + strings.TrimSpace(string(v)) + "\n")
+	}
+
+	// Insert before the next top-level key and the comments and blank lines
+	// above it, or at the end of the file.
+	at := len(lines)
+	if next != nil {
+		at = next.Line - 1
+		for at > 0 {
+			t := strings.TrimSpace(lines[at-1])
+			if t != "" && !strings.HasPrefix(t, "#") {
+				break
+			}
+			at--
+		}
+	} else {
+		for at > 0 && strings.TrimSpace(lines[at-1]) == "" {
+			at--
+		}
+	}
+	var out strings.Builder
+	for _, l := range lines[:at] {
+		out.WriteString(l)
+	}
+	if at > 0 && !strings.HasSuffix(lines[at-1], "\n") {
+		out.WriteString("\n")
+	}
+	out.WriteString(add.String())
+	for _, l := range lines[at:] {
+		out.WriteString(l)
+	}
+
+	var check Config
+	if err := yaml.Unmarshal([]byte(out.String()), &check); err != nil {
+		return fmt.Errorf("the updated config doesn't parse: %w", err)
+	}
+	if n := len(check.Stacks); n != len(list.Content)+1 || check.Stacks[n-1].Name != st.Name || check.Stacks[n-1].Path != st.Path {
+		return fmt.Errorf("%s: couldn't add %s cleanly; add it by hand", path, st.Name)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(path, []byte(out.String()), info.Mode().Perm())
+}
+
+func writeAtomic(path string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 func findComposeFile(dir string) string {

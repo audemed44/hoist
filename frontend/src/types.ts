@@ -153,6 +153,49 @@ export interface UpdatesInfo {
   stacks: Record<string, ServiceUpdate[]>;
 }
 
+/** A compose project running on this host that no stack covers yet. */
+export interface ProjectCandidate {
+  /** The compose project name. */
+  name: string;
+  dir: string;
+  files: string[];
+  services: string[];
+  running: number;
+  total: number;
+  /** Suggested stack name, folder and compose file. */
+  stack: string;
+  path: string;
+  file: string;
+  /** Why it can't be adopted as it is. */
+  problem?: string;
+}
+
+export interface Discovery {
+  projects: ProjectCandidate[];
+  /** Folders the stacks live in, where a new one would go. */
+  parents: string[];
+}
+
+export interface AddStack {
+  name: string;
+  path: string;
+  project?: string;
+  file?: string;
+  create?: boolean;
+  content?: string;
+  message?: string;
+  deploy?: boolean;
+}
+
+export interface AddResult {
+  stack: string;
+  commit?: string;
+  pushed: boolean;
+  push_error?: string;
+  git_note?: string;
+  job?: Job;
+}
+
 /** One entry of the audit log. */
 export interface AuditEvent {
   id: number;

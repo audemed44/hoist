@@ -1,4 +1,4 @@
-import { ArrowUpRight, Rocket } from "lucide-preact";
+import { ArrowUpRight, Plus, Rocket } from "lucide-preact";
 import { useState } from "preact/hooks";
 import { api } from "../api";
 import { useData } from "../hooks";
@@ -62,6 +62,12 @@ export function StacksPage(props: { readOnly: boolean }) {
           />
         ))}
       </div>
+      {!props.readOnly && (
+        <a class="add-stack" href="/new">
+          <Plus size={16} /> Add a stack
+          <span class="muted">adopt one that's running, or start a new one</span>
+        </a>
+      )}
       {deploying && (
         <DeployDialog
           stack={deploying}

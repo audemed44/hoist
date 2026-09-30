@@ -30,6 +30,11 @@ that idles at about 4 MB of RAM. A lightweight replacement for
   committed like any edit), or let a policy apply them for you.
 - **Self-update**: Hoist can deploy its own stack. A short-lived helper
   container runs that deploy, so it finishes while Hoist is replaced.
+- **Add stacks**: adopt a compose project already running on the server
+  (its folder, compose file and project name are read from its
+  containers, so nothing gets recreated), or create a new stack folder with
+  a compose file, committed and optionally deployed. Either is appended to
+  `hoist.yaml`, leaving the rest of the file as it was.
 - **Activity**: an audit log of every deploy, edit, commit, `.env` change
   and update, with where it came from (browser, API token, Foyer or an
   update policy) and how it ended. Filter by stack, action, trigger and

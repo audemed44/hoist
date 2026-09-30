@@ -2,6 +2,7 @@ import { LogOut } from "lucide-preact";
 import { useEffect, useState } from "preact/hooks";
 import { api, setUnauthorizedHandler } from "./api";
 import { settings } from "./lib";
+import { AddStackPage } from "./components/AddStackPage";
 import { AuditPage } from "./components/AuditPage";
 import { JobPage } from "./components/JobPage";
 import { Login } from "./components/Login";
@@ -77,6 +78,7 @@ function Shell(props: { session: Session; onSignOut: () => void }) {
         )}
         {route.page === "job" && <JobPage key={route.id} id={route.id} />}
         {route.page === "audit" && <AuditPage />}
+        {route.page === "new" && <AddStackPage readOnly={props.session.read_only} />}
       </main>
     </div>
   );

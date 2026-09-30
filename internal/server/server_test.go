@@ -44,10 +44,12 @@ esac
 `
 
 type env struct {
-	t     *testing.T
-	srv   *Server
-	h     http.Handler
-	stack config.Stack
+	t       *testing.T
+	srv     *Server
+	h       http.Handler
+	stack   config.Stack
+	root    string
+	cfgPath string
 }
 
 func git(t *testing.T, dir string, args ...string) {
@@ -90,9 +92,25 @@ func newEnv(t *testing.T, readOnly bool) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_ = os.MkdirAll(filepath.Join(root, "romm"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, "romm", "compose.yml"), []byte("services:\n  romm:\n    image: romm\n"), 0o644)
 	dockerSrv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/containers/json" {
 			http.NotFound(w, r)
+			return
+		}
+		if !strings.Contains(r.URL.Query().Get("filters"), "=") { // every compose project
+			project := func(name, dir, files, service string) map[string]any {
+				return map[string]any{"State": "running", "Labels": map[string]string{
+					"com.docker.compose.project": name, "com.docker.compose.service": service,
+					"com.docker.compose.project.working_dir": dir, "com.docker.compose.project.config_files": files,
+				}}
+			}
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				project("main-server", dir, filepath.Join(dir, "docker-compose.yml"), "web"),
+				project("romm", filepath.Join(root, "romm"), filepath.Join(root, "romm", "compose.yml"), "romm"),
+				project("multi", "/srv/multi", "/srv/multi/a.yml,/srv/multi/b.yml", "x"),
+			})
 			return
 		}
 		_ = json.NewEncoder(w).Encode([]map[string]any{
@@ -105,9 +123,11 @@ func newEnv(t *testing.T, readOnly bool) *env {
 	go func() { _ = dockerSrv.Serve(l) }()
 	t.Cleanup(func() { _ = dockerSrv.Close() })
 
-	cfg := &config.Config{
-		Git:    config.Git{Name: "Hoist", Email: "hoist@test"},
-		Stacks: []config.Stack{{Name: "main-stack", Path: dir, File: "docker-compose.yml", Project: "main-server"}},
+	cfgPath := filepath.Join(root, "hoist.yaml")
+	_ = os.WriteFile(cfgPath, []byte("git:\n  name: Hoist\n  email: hoist@test\n\nstacks:\n  - name: main-stack\n    path: "+dir+"\n    project: main-server\n"), 0o644)
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
 	}
 	store, err := jobs.NewStore(filepath.Join(root, "jobs"))
 	if err != nil {
@@ -124,7 +144,7 @@ func newEnv(t *testing.T, readOnly bool) *env {
 		Config: cfg, Docker: docker.New(sock), Jobs: store, Audit: auditLog, Token: token, ReadOnly: readOnly,
 		Web: fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}},
 	})
-	return &env{t: t, srv: srv, h: srv.Handler(), stack: cfg.Stacks[0]}
+	return &env{t: t, srv: srv, h: srv.Handler(), stack: cfg.Stacks[0], root: root, cfgPath: cfgPath}
 }
 
 func (e *env) do(method, path, body string, headers ...string) *httptest.ResponseRecorder {
@@ -527,5 +547,120 @@ func TestAudit(t *testing.T) {
 	}
 	if w := e.do("GET", "/api/audit", "", "Authorization", ""); w.Code != http.StatusUnauthorized {
 		t.Errorf("no token: %d", w.Code)
+	}
+}
+
+func TestDiscoverAndAdopt(t *testing.T) {
+	e := newEnv(t, false)
+	found := decode[discovery](t, e.do("GET", "/api/discover", ""))
+	got := found.Projects
+	if len(got) != 2 || len(found.Parents) != 1 || found.Parents[0] != e.root {
+		t.Fatalf("discovery = %+v", found)
+	}
+	multi, romm := got[0], got[1]
+	if romm.Name != "romm" || romm.Stack != "romm" || romm.File != "compose.yml" || romm.Problem != "" || romm.Running != 1 {
+		t.Errorf("romm = %+v", romm)
+	}
+	if multi.Problem == "" {
+		t.Errorf("multi = %+v", multi)
+	}
+
+	body, _ := json.Marshal(map[string]string{"name": "romm", "path": romm.Path, "project": "romm", "file": "compose.yml"})
+	if w := e.do("POST", "/api/stacks", string(body)); w.Code != http.StatusCreated {
+		t.Fatalf("adopt: %d %s", w.Code, w.Body)
+	}
+	if w := e.do("POST", "/api/stacks", string(body)); w.Code != http.StatusConflict {
+		t.Errorf("adopt twice: %d", w.Code)
+	}
+	names := decode[[]string](t, e.do("GET", "/api/stack-names", ""))
+	if len(names) != 2 || names[1] != "romm" {
+		t.Errorf("names = %v", names)
+	}
+	data, _ := os.ReadFile(e.cfgPath)
+	if !strings.HasSuffix(string(data), "  - name: romm\n    path: "+romm.Path+"\n    project: romm\n") {
+		t.Errorf("hoist.yaml:\n%s", data)
+	}
+	if got := decode[discovery](t, e.do("GET", "/api/discover", "")).Projects; len(got) != 1 {
+		t.Errorf("romm is still offered: %+v", got)
+	}
+	events := decode[[]audit.Event](t, e.do("GET", "/api/audit?action=stack.", ""))
+	if len(events) != 1 || events[0].Action != audit.StackAdopt || events[0].Stack != "romm" {
+		t.Errorf("audit = %+v", events)
+	}
+	if w := e.do("POST", "/api/stacks", `{"name":"x","path":"`+t.TempDir()+`"}`); w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("adopting a folder without a compose file: %d", w.Code)
+	}
+}
+
+func TestCreateStack(t *testing.T) {
+	e := newEnv(t, false)
+	create := func(name, path, content string) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]any{"name": name, "path": path, "create": true, "content": content})
+		return e.do("POST", "/api/stacks", string(body))
+	}
+	repo := e.stack.Path
+
+	// Invalid compose: nothing is left behind.
+	bad := filepath.Join(repo, "broken")
+	if w := create("broken", bad, "INVALID\n"); w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("invalid: %d %s", w.Code, w.Body)
+	}
+	if _, err := os.Stat(bad); !os.IsNotExist(err) {
+		t.Error("the folder of a refused stack was left behind")
+	}
+	if w := create("multi", filepath.Join(repo, "multi"), "services: {}\n"); w.Code != http.StatusConflict {
+		t.Errorf("project of a running stack: %d %s", w.Code, w.Body)
+	}
+	if w := create("romm", filepath.Join(e.root, "romm"), "services: {}\n"); w.Code != http.StatusConflict {
+		t.Errorf("folder with a compose file: %d %s", w.Code, w.Body)
+	}
+
+	// An allowlist .gitignore leaves new folders out of git.
+	_ = os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("/*\n!/.gitignore\n!/docker-compose.yml\n.env\n"), 0o644)
+	content := "services:\n  app:\n    image: ghcr.io/example/app:1.0\n    restart: unless-stopped\n"
+	w := create("new-app", filepath.Join(repo, "new-app"), content)
+	res := decode[addResult](t, w)
+	if w.Code != http.StatusCreated || res.Commit == "" || !res.Pushed || !strings.Contains(res.GitNote, ".gitignore") {
+		t.Fatalf("create: %d %+v", w.Code, res)
+	}
+	data, _ := os.ReadFile(filepath.Join(repo, "new-app", "compose.yml"))
+	if string(data) != content {
+		t.Errorf("compose.yml = %q", data)
+	}
+	info := decode[StackInfo](t, e.do("GET", "/api/stacks/new-app", ""))
+	if info.Project != "new-app" || info.Git == nil || info.Git.Untracked {
+		t.Errorf("new stack = %+v", info)
+	}
+	history := decode[[]map[string]any](t, e.do("GET", "/api/stacks/new-app/history", ""))
+	if len(history) != 1 || history[0]["subject"] != "feat(new-app): add stack" {
+		t.Errorf("history = %v", history)
+	}
+	events := decode[[]audit.Event](t, e.do("GET", "/api/audit?action=stack.create", ""))
+	if len(events) != 1 || events[0].Commit != res.Commit {
+		t.Errorf("audit = %+v", events)
+	}
+}
+
+func TestVisible(t *testing.T) {
+	s := &Server{}
+	s.selfOnce.Do(func() {})
+	if err := s.visible("/anywhere"); err != nil {
+		t.Errorf("outside a container: %v", err)
+	}
+	s.self = &docker.Self{
+		Binds:  []string{"/var/run/docker.sock:/var/run/docker.sock", "/home/u/homelab:/home/u/homelab", "./config:/config"},
+		Mounts: []docker.Mount{{Type: "bind", Source: "/srv/apps", Target: "/srv/apps"}},
+	}
+	for path, ok := range map[string]bool{
+		"/home/u/homelab":      true,
+		"/home/u/homelab/romm": true,
+		"/srv/apps/x":          true,
+		"/home/u/homelab2":     false,
+		"/config/new":          false,
+		"/home/u":              false,
+	} {
+		if err := s.visible(path); (err == nil) != ok {
+			t.Errorf("%s: %v", path, err)
+		}
 	}
 }

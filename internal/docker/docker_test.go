@@ -99,3 +99,38 @@ func TestFindSelfAndHelper(t *testing.T) {
 		t.Errorf("Exists(gone) = %v, %v", ok, err)
 	}
 }
+
+func TestProjects(t *testing.T) {
+	c := fakeDocker(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if f := r.URL.Query().Get("filters"); f != `{"label":["com.docker.compose.project"]}` {
+			t.Errorf("filters = %s", f)
+		}
+		labels := func(project, service string, extra ...string) map[string]string {
+			l := map[string]string{labelProject: project, labelService: service,
+				labelDir: "/srv/" + project, labelFiles: "/srv/" + project + "/compose.yml"}
+			for i := 0; i+1 < len(extra); i += 2 {
+				l[extra[i]] = extra[i+1]
+			}
+			return l
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"State": "running", "Labels": labels("romm", "romm")},
+			{"State": "exited", "Labels": labels("romm", "db")},
+			{"State": "running", "Labels": labels("romm", "romm")}, // a replica
+			{"State": "exited", "Labels": labels("romm", "migrate", labelOneOff, "True")},
+			{"State": "running", "Labels": labels("abc", "x", labelFiles, "/srv/abc/a.yml,/srv/abc/b.yml")},
+		})
+	}))
+	got, err := c.Projects(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Name != "abc" || len(got[0].Files) != 2 {
+		t.Fatalf("projects = %+v", got)
+	}
+	romm := got[1]
+	if romm.Dir != "/srv/romm" || romm.Files[0] != "/srv/romm/compose.yml" || romm.Running != 2 || romm.Total != 3 ||
+		len(romm.Services) != 2 || romm.Services[0] != "db" {
+		t.Errorf("romm = %+v", romm)
+	}
+}

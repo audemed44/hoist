@@ -149,9 +149,10 @@ func (s *Server) stackInfo(ctx context.Context, st config.Stack, fetch bool) Sta
 }
 
 func (s *Server) listStacks(w http.ResponseWriter, r *http.Request) {
-	out := make([]StackInfo, len(s.Config.Stacks))
+	stacks := s.Config.List()
+	out := make([]StackInfo, len(stacks))
 	var wg sync.WaitGroup
-	for i, st := range s.Config.Stacks {
+	for i, st := range stacks {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -165,7 +166,7 @@ func (s *Server) listStacks(w http.ResponseWriter, r *http.Request) {
 // stackNames lists the configured stacks without looking at any of them.
 func (s *Server) stackNames(w http.ResponseWriter, _ *http.Request) {
 	names := []string{}
-	for _, st := range s.Config.Stacks {
+	for _, st := range s.Config.List() {
 		names = append(names, st.Name)
 	}
 	writeJSON(w, http.StatusOK, names)
