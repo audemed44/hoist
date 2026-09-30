@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -330,6 +331,20 @@ func isHash(s string) bool {
 }
 
 // Committed returns a file as it is in HEAD.
+var githubRe = regexp.MustCompile(`github\.com[:/]([A-Za-z0-9-]+)/`)
+
+// GitHubOwner is the owner of the repo's default remote on GitHub, or "".
+func (r *Repo) GitHubOwner(ctx context.Context) string {
+	out, err := run(ctx, r.Root, "ls-remote", "--get-url")
+	if err != nil {
+		return ""
+	}
+	if m := githubRe.FindStringSubmatch(out); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
 // Ignored reports whether .gitignore keeps file out of git (tracked files
 // never are).
 func (r *Repo) Ignored(ctx context.Context, file string) (bool, error) {

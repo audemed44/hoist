@@ -219,6 +219,8 @@ type checkResult struct {
 	// Conflicts are host ports and container names shared with other
 	// services, stacks or containers. They don't stop a save.
 	Conflicts []conflict `json:"conflicts"`
+	// Hints are advice (pin versions, add healthchecks…), also no obstacle.
+	Hints []compose.Hint `json:"hints"`
 }
 
 // checkCompose validates an edit, looks for clashes with the rest of the
@@ -235,14 +237,51 @@ func (s *Server) checkCompose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	current, _ := os.ReadFile(st.ComposePath())
-	resp := checkResult{Message: compose.Summary(st.Name, current, []byte(body.Content)), Conflicts: []conflict{}}
+	resp := checkResult{
+		Message:   compose.Summary(st.Name, current, []byte(body.Content)),
+		Conflicts: []conflict{}, Hints: []compose.Hint{},
+	}
 	svcs, err := compose.Resolve(r.Context(), st, []byte(body.Content))
 	if err != nil {
 		resp.Error = err.Error()
 	} else {
 		resp.Conflicts = s.conflicts(r.Context(), st, svcs)
+		resp.Hints = s.lint(r.Context(), st, []byte(body.Content), svcs)
+		// Only a secret's message names what it's about; the others'
+		// wording can vary (an image pulled since, a new tag).
+		key := func(h compose.Hint) string {
+			if h.Kind == "secret" {
+				return h.Service + "|" + h.Message
+			}
+			return h.Service + "|" + h.Kind
+		}
+		old := map[string]bool{}
+		if saved, err := compose.Resolve(r.Context(), st, current); err == nil {
+			for _, h := range s.lint(r.Context(), st, current, saved) {
+				old[key(h)] = true
+			}
+		}
+		for i := range resp.Hints {
+			resp.Hints[i].New = !old[key(resp.Hints[i])]
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// lint gives advice on a compose file. Images published by the GitHub owner
+// of the stack's repo count as yours, so they may follow :latest.
+func (s *Server) lint(ctx context.Context, st config.Stack, raw []byte, svcs []compose.Service) []compose.Hint {
+	owner := ""
+	if repo, _ := gitrepo.Open(ctx, st.Path); repo != nil {
+		owner = repo.GitHubOwner(ctx)
+	}
+	return compose.Lint(compose.LintInput{
+		Raw: raw, Services: svcs, Own: compose.OwnImages(owner),
+		ImageHealthcheck: func(image string) (bool, bool) {
+			has, err := s.Docker.ImageHealthcheck(ctx, image)
+			return has, err == nil
+		},
+	})
 }
 
 type saveResult struct {

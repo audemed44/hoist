@@ -211,3 +211,53 @@ func TestParsePorts(t *testing.T) {
 		}
 	}
 }
+
+func TestLint(t *testing.T) {
+	raw := []byte(`services:
+  app:
+    image: ghcr.io/audemed44/foyer:latest
+    restart: unless-stopped
+    environment:
+      DB_PASSWORD: hunter2
+      API_KEY: ${API_KEY}
+      TOKEN_FILE: /run/secrets/token
+      DEBUG: "true"
+  db:
+    image: postgres
+    environment:
+      - POSTGRES_PASSWORD=s3cret
+      - POSTGRES_USER=app
+  job:
+    build: .
+    healthcheck:
+      disable: true
+`)
+	resolved, err := parseServices([]byte(`{"services":{
+		"app":{"image":"ghcr.io/audemed44/foyer:latest","restart":"unless-stopped"},
+		"db":{"image":"postgres","deploy":{"restart_policy":{"condition":"on-failure"}}},
+		"job":{"image":"job","build":{"context":"."},"healthcheck":{"disable":true}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hints := Lint(LintInput{
+		Raw: raw, Services: resolved, Own: OwnImages("AudeMed44"),
+		ImageHealthcheck: func(image string) (bool, bool) { return image == "postgres", image != "ghcr.io/audemed44/foyer:latest" },
+	})
+	var got []string
+	for _, h := range hints {
+		got = append(got, h.Service+" "+h.Kind)
+		if strings.Contains(h.Message, "hunter2") || strings.Contains(h.Message, "s3cret") {
+			t.Errorf("hint repeats a secret: %s", h.Message)
+		}
+	}
+	want := "app healthcheck,db latest,job restart,app secret,db secret"
+	if strings.Join(got, ",") != want {
+		t.Errorf("hints = %v, want %s", got, want)
+	}
+	if !strings.Contains(hints[0].Message, "isn't pulled yet") {
+		t.Errorf("unknown image healthcheck: %s", hints[0].Message)
+	}
+	if !isLatest("nginx") || !isLatest("localhost:5000/app") || isLatest("nginx:1.27") || isLatest("nginx@sha256:abc") {
+		t.Error("isLatest")
+	}
+}

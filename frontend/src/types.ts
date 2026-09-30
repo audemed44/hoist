@@ -90,10 +90,20 @@ export interface Conflict {
   with: string;
 }
 
+/** Advice about a compose file. */
+export interface Hint {
+  service: string;
+  kind: "latest" | "restart" | "healthcheck" | "secret";
+  message: string;
+  /** The saved file doesn't have this problem; the edit brings it. */
+  new: boolean;
+}
+
 export interface CheckResult {
   message: string;
   error?: string;
   conflicts: Conflict[];
+  hints: Hint[];
 }
 
 export interface SaveResult {

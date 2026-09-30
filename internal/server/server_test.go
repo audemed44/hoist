@@ -706,3 +706,29 @@ func TestConflicts(t *testing.T) {
 		t.Errorf("conflicts:\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+func TestCheckHints(t *testing.T) {
+	e := newEnv(t, false)
+	draft := "# json: {\"services\":{\"web\":{\"image\":\"nginx\",\"restart\":\"always\",\"healthcheck\":{\"test\":[\"CMD\",\"true\"]}}}}\n" +
+		"services:\n  web:\n    image: nginx\n    environment:\n      ADMIN_PASSWORD: correct-horse\n"
+	b, _ := json.Marshal(map[string]string{"content": draft})
+	w := e.do("POST", "/api/stacks/main-stack/check", string(b))
+	if strings.Contains(w.Body.String(), "correct-horse") {
+		t.Fatal("the check repeats a secret")
+	}
+	check := decode[checkResult](t, w)
+	var kinds []string
+	for _, h := range check.Hints {
+		kinds = append(kinds, h.Service+" "+h.Kind)
+	}
+	// The saved file already follows :latest; the secret is new.
+	if strings.Join(kinds, ",") != "web latest,web secret" || check.Hints[0].New || !check.Hints[1].New {
+		t.Errorf("hints = %+v", check.Hints)
+	}
+	// Problems the saved file already has aren't new.
+	_ = os.WriteFile(e.stack.ComposePath(), []byte(draft), 0o644)
+	check = decode[checkResult](t, e.do("POST", "/api/stacks/main-stack/check", string(b)))
+	if len(check.Hints) != 2 || check.Hints[0].New || check.Hints[1].New {
+		t.Errorf("hints after saving = %+v", check.Hints)
+	}
+}
