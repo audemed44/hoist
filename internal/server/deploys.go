@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/audemed44/hoist/internal/audit"
 	"github.com/audemed44/hoist/internal/compose"
 	"github.com/audemed44/hoist/internal/config"
 	"github.com/audemed44/hoist/internal/deploy"
@@ -92,6 +93,10 @@ func (s *Server) startDeploy(st config.Stack, services []string, trigger, commit
 	if err != nil {
 		return nil, http.StatusInternalServerError, err
 	}
+	s.record(audit.Event{
+		Stack: st.Name, Services: services, Action: audit.Deploy, Trigger: trigger,
+		Commit: commit, Job: job.ID, Result: audit.Running,
+	})
 	if !self {
 		go func() {
 			if err := deploy.Run(context.Background(), s.Docker, s.Jobs, st, job); err != nil {
@@ -123,7 +128,7 @@ func (s *Server) postDeploy(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength != 0 && !readJSON(w, r, 16<<10, &body) {
 		return
 	}
-	job, status, err := s.startDeploy(st, body.Services, "ui", "")
+	job, status, err := s.startDeploy(st, body.Services, triggerOf(r), "")
 	if err != nil {
 		writeError(w, status, err.Error())
 		return

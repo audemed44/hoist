@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/audemed44/hoist/internal/audit"
 	"github.com/audemed44/hoist/internal/config"
 	"github.com/audemed44/hoist/internal/docker"
 	"github.com/audemed44/hoist/internal/jobs"
@@ -23,6 +24,7 @@ type Options struct {
 	Config   *config.Config
 	Docker   *docker.Client
 	Jobs     *jobs.Store
+	Audit    *audit.Log
 	Updates  *updates.Checker
 	Token    string
 	ReadOnly bool
@@ -51,6 +53,7 @@ func New(o Options) *Server {
 func (s *Server) Handler() http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/stacks", s.listStacks)
+	api.HandleFunc("GET /api/stack-names", s.stackNames)
 	api.HandleFunc("GET /api/stacks/{name}", s.getStack)
 	api.HandleFunc("GET /api/stacks/{name}/compose", s.getCompose)
 	api.HandleFunc("POST /api/stacks/{name}/check", s.checkCompose)
@@ -70,6 +73,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/updates", s.getUpdates)
 	api.HandleFunc("POST /api/updates/check", s.postCheck)
 	api.HandleFunc("POST /api/stacks/{name}/services/{service}/update", s.writable(s.applyUpdate))
+	api.HandleFunc("GET /api/audit", s.listAudit)
 	api.HandleFunc("GET /api/jobs", s.listJobs)
 	api.HandleFunc("GET /api/jobs/{id}", s.getJob)
 	api.HandleFunc("GET /api/jobs/{id}/log", s.jobLog)

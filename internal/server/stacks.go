@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/audemed44/hoist/internal/audit"
 	"github.com/audemed44/hoist/internal/compose"
 	"github.com/audemed44/hoist/internal/config"
 	"github.com/audemed44/hoist/internal/envfile"
@@ -161,6 +162,15 @@ func (s *Server) listStacks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// stackNames lists the configured stacks without looking at any of them.
+func (s *Server) stackNames(w http.ResponseWriter, _ *http.Request) {
+	names := []string{}
+	for _, st := range s.Config.Stacks {
+		names = append(names, st.Name)
+	}
+	writeJSON(w, http.StatusOK, names)
+}
+
 func (s *Server) getStack(w http.ResponseWriter, r *http.Request) {
 	st, ok := s.stack(w, r)
 	if !ok {
@@ -271,12 +281,20 @@ func (s *Server) putCompose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res := saveResult{Hash: contentHash(content)}
+	ev := audit.Event{Stack: st.Name, Action: audit.ComposeSave, Trigger: triggerOf(r), Detail: message}
 	if err := s.commit(r.Context(), st, message, &res); err != nil {
-		writeError(w, http.StatusInternalServerError, "saved, but the commit failed: "+err.Error())
+		ev.Result, ev.Error = audit.Failed, "saved, but the commit failed: "+err.Error()
+		s.record(ev)
+		writeError(w, http.StatusInternalServerError, ev.Error)
 		return
 	}
+	ev.Commit = res.Commit
+	if res.PushError != "" {
+		ev.Error = "not pushed: " + res.PushError
+	}
+	s.record(ev)
 	if body.Deploy {
-		job, status, err := s.startDeploy(st, nil, "ui", res.Commit)
+		job, status, err := s.startDeploy(st, nil, triggerOf(r), res.Commit)
 		if err != nil {
 			writeError(w, status, "saved, but the deploy didn't start: "+err.Error())
 			return
@@ -411,14 +429,19 @@ func (s *Server) putEnv(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	before := envfile.Parse(f.Bytes())
 	if err := f.Apply(body.Entries); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	ev := audit.Event{Stack: st.Name, Action: audit.EnvSave, Trigger: triggerOf(r), Detail: envChanges(before, f)}
 	if err := f.Write(st.EnvPath()); err != nil {
+		ev.Result, ev.Error = audit.Failed, err.Error()
+		s.record(ev)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.record(ev)
 	s.getEnv(w, r)
 }
 
@@ -473,15 +496,15 @@ func (s *Server) getHistoryFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) gitFetch(w http.ResponseWriter, r *http.Request) {
-	s.gitAction(w, r, func(ctx context.Context, repo *gitrepo.Repo, _ config.Stack) error { return repo.Fetch(ctx) })
+	s.gitAction(w, r, "", "", func(ctx context.Context, repo *gitrepo.Repo, _ config.Stack) error { return repo.Fetch(ctx) })
 }
 
 func (s *Server) gitPull(w http.ResponseWriter, r *http.Request) {
-	s.gitAction(w, r, func(ctx context.Context, repo *gitrepo.Repo, _ config.Stack) error { return repo.Pull(ctx) })
+	s.gitAction(w, r, audit.GitPull, "", func(ctx context.Context, repo *gitrepo.Repo, _ config.Stack) error { return repo.Pull(ctx) })
 }
 
 func (s *Server) gitPush(w http.ResponseWriter, r *http.Request) {
-	s.gitAction(w, r, func(ctx context.Context, repo *gitrepo.Repo, _ config.Stack) error { return repo.Push(ctx) })
+	s.gitAction(w, r, audit.GitPush, "", func(ctx context.Context, repo *gitrepo.Repo, _ config.Stack) error { return repo.Push(ctx) })
 }
 
 // driftResponse is a compose file edited outside Hoist next to its last
@@ -519,7 +542,7 @@ func (s *Server) getDrift(w http.ResponseWriter, r *http.Request) {
 
 // gitDiscard throws away edits made outside Hoist.
 func (s *Server) gitDiscard(w http.ResponseWriter, r *http.Request) {
-	s.gitAction(w, r, func(ctx context.Context, repo *gitrepo.Repo, st config.Stack) error {
+	s.gitAction(w, r, audit.GitDiscard, "discarded edits made outside Hoist", func(ctx context.Context, repo *gitrepo.Repo, st config.Stack) error {
 		return repo.Restore(ctx, st.ComposePath())
 	})
 }
@@ -543,7 +566,7 @@ func (s *Server) gitCommit(w http.ResponseWriter, r *http.Request) {
 	if !s.messageOK(w, msg) {
 		return
 	}
-	s.gitAction(w, r, func(ctx context.Context, repo *gitrepo.Repo, st config.Stack) error {
+	s.gitAction(w, r, audit.GitCommit, msg, func(ctx context.Context, repo *gitrepo.Repo, st config.Stack) error {
 		author := gitrepo.Author{Name: s.Config.Git.Name, Email: s.Config.Git.Email}
 		if _, err := repo.Commit(ctx, st.ComposePath(), msg, author); err != nil {
 			return err
@@ -555,7 +578,9 @@ func (s *Server) gitCommit(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) gitAction(w http.ResponseWriter, r *http.Request, fn func(context.Context, *gitrepo.Repo, config.Stack) error) {
+// gitAction runs fn on the stack's repo and answers with the repo's status.
+// A non-empty action is recorded in the audit log.
+func (s *Server) gitAction(w http.ResponseWriter, r *http.Request, action, detail string, fn func(context.Context, *gitrepo.Repo, config.Stack) error) {
 	st, ok := s.stack(w, r)
 	if !ok {
 		return
@@ -564,11 +589,22 @@ func (s *Server) gitAction(w http.ResponseWriter, r *http.Request, fn func(conte
 	if repo == nil {
 		return
 	}
-	if err := fn(r.Context(), repo, st); err != nil {
+	err := fn(r.Context(), repo, st)
+	status, serr := repo.Status(r.Context(), st.ComposePath(), 0)
+	if action != "" {
+		ev := audit.Event{Stack: st.Name, Action: action, Trigger: triggerOf(r), Detail: detail}
+		if err != nil {
+			ev.Result, ev.Error = audit.Failed, err.Error()
+		} else if serr == nil {
+			ev.Commit = status.Head
+		}
+		s.record(ev)
+	}
+	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	status, err := repo.Status(r.Context(), st.ComposePath(), 0)
+	err = serr
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

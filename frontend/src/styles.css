@@ -290,6 +290,26 @@ pre {
   font-weight: 800;
   letter-spacing: -0.02em;
 }
+.topnav {
+  display: flex;
+  gap: 4px;
+}
+.topnav a {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  border-bottom: 2px solid transparent;
+}
+.topnav a:hover {
+  color: var(--fg);
+}
+.topnav a.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
 .brand-mark {
   width: 14px;
   height: 14px;
@@ -1099,4 +1119,62 @@ a.chip-update:hover {
 }
 .plan .check .chip {
   min-width: 0;
+}
+
+/* ── Audit log ─────────────────────────────────────────────────────────── */
+.page-lede {
+  max-width: 62ch;
+  margin: 0;
+}
+.filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 2px solid var(--fg);
+}
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+select.input {
+  appearance: none;
+  padding-right: 30px;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--fg-3) 50%) no-repeat calc(100% - 16px) 16px / 5px
+      5px,
+    linear-gradient(135deg, var(--fg-3) 50%, transparent 50%) no-repeat calc(100% - 11px) 16px / 5px
+      5px;
+  cursor: pointer;
+}
+select.input option {
+  background: var(--raised);
+  color: var(--fg);
+}
+.audit-list .list-row {
+  align-items: flex-start;
+}
+.audit-list .dot {
+  margin-top: 7px;
+}
+.audit-detail {
+  font-size: 13.5px;
+  color: var(--fg-2);
+  overflow-wrap: anywhere;
+}
+.load-more {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 24px;
+}
+@media (max-width: 760px) {
+  .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .topnav a {
+    padding: 6px 6px;
+    letter-spacing: 0.08em;
+  }
 }

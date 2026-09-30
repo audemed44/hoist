@@ -18,6 +18,7 @@ import (
 	"time"
 	_ "time/tzdata" // the runtime image may have no zoneinfo; TZ needs this
 
+	"github.com/audemed44/hoist/internal/audit"
 	"github.com/audemed44/hoist/internal/compose"
 	"github.com/audemed44/hoist/internal/config"
 	"github.com/audemed44/hoist/internal/deploy"
@@ -57,10 +58,19 @@ func main() {
 		slog.Error("could not open the jobs folder", "err", err)
 		os.Exit(1)
 	}
+	auditLog, err := audit.Open(filepath.Join(configDir, "hoist.db"))
+	if err != nil {
+		slog.Error("could not open the audit log", "err", err)
+		os.Exit(1)
+	}
+	defer auditLog.Close()
+	store.OnFinish = auditLog.JobFinished
 	dock := docker.New(env("HOIST_DOCKER_SOCKET", "/var/run/docker.sock"))
 
 	if len(os.Args) > 2 && os.Args[1] == "job" {
-		os.Exit(runJob(cfg, dock, store, os.Args[2]))
+		code := runJob(cfg, dock, store, os.Args[2])
+		auditLog.Close()
+		os.Exit(code)
 	}
 
 	// Any token will do; it's yours to pick. Only an empty one is refused,
@@ -79,7 +89,7 @@ func main() {
 	}
 	readOnly := os.Getenv("HOIST_READ_ONLY") == "true" || os.Getenv("HOIST_READ_ONLY") == "1"
 	checker := updates.New(cfg, dock, filepath.Join(configDir, "updates.json"))
-	app := server.New(server.Options{Config: cfg, Docker: dock, Jobs: store, Updates: checker, Token: token, ReadOnly: readOnly, Web: dist})
+	app := server.New(server.Options{Config: cfg, Docker: dock, Jobs: store, Audit: auditLog, Updates: checker, Token: token, ReadOnly: readOnly, Web: dist})
 	srv := &http.Server{
 		Addr:              ":" + env("HOIST_PORT", "8080"),
 		Handler:           app.Handler(),

@@ -14,6 +14,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/audemed44/hoist/internal/audit"
 	"github.com/audemed44/hoist/internal/compose"
 	"github.com/audemed44/hoist/internal/config"
 	"github.com/audemed44/hoist/internal/docker"
@@ -112,9 +113,15 @@ func newEnv(t *testing.T, readOnly bool) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	auditLog, err := audit.Open(filepath.Join(root, "hoist.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { auditLog.Close() })
+	store.OnFinish = auditLog.JobFinished
 	t.Setenv("HOIST_CONTAINER", "not-in-docker")
 	srv := New(Options{
-		Config: cfg, Docker: docker.New(sock), Jobs: store, Token: token, ReadOnly: readOnly,
+		Config: cfg, Docker: docker.New(sock), Jobs: store, Audit: auditLog, Token: token, ReadOnly: readOnly,
 		Web: fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}},
 	})
 	return &env{t: t, srv: srv, h: srv.Handler(), stack: cfg.Stacks[0]}
@@ -465,5 +472,60 @@ func TestDrift(t *testing.T) {
 	data, _ := os.ReadFile(e.stack.ComposePath())
 	if string(data) != "services:\n  web:\n    image: nginx\n" {
 		t.Errorf("after discard: %q", data)
+	}
+}
+
+func TestAudit(t *testing.T) {
+	e := newEnv(t, false)
+	cur := decode[composeFile](t, e.do("GET", "/api/stacks/main-stack/compose", ""))
+	b, _ := json.Marshal(map[string]any{"content": "services:\n  web:\n    image: nginx:1.27\n", "base": cur.Hash})
+	if w := e.do("PUT", "/api/stacks/main-stack/compose", string(b)); w.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", w.Code, w.Body)
+	}
+	w := e.do("PUT", "/api/stacks/main-stack/env", `{"entries":[{"key":"TZ","value":"Europe/London"},{"key":"API_KEY","value":"secret-value"}]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("env: %d %s", w.Code, w.Body)
+	}
+	w = e.do("POST", "/api/foyer/deploy/main-stack", "")
+	id := strings.TrimPrefix(decode[map[string]string](t, w)["status_url"], "/api/foyer/jobs/")
+	waitJob(t, e, id)
+	// The audit row is updated just after the job file.
+	for i := 0; i < 50 && strings.Contains(e.do("GET", "/api/audit?result=running", "").Body.String(), "deploy"); i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	w = e.do("GET", "/api/audit", "")
+	if strings.Contains(w.Body.String(), "secret-value") || strings.Contains(w.Body.String(), "hunter2") {
+		t.Fatal("the audit log holds .env values")
+	}
+	events := decode[[]audit.Event](t, w)
+	if len(events) != 3 {
+		t.Fatalf("events = %+v", events)
+	}
+	deploy, env, save := events[0], events[1], events[2]
+	if deploy.Action != audit.Deploy || deploy.Trigger != "foyer" || deploy.Job != id || deploy.Result != audit.OK || deploy.Detail != "Nothing changed" {
+		t.Errorf("deploy = %+v", deploy)
+	}
+	if env.Action != audit.EnvSave || env.Trigger != "api" || env.Detail != "added API_KEY; changed TZ; removed DB_PASSWORD" {
+		t.Errorf("env = %+v", env)
+	}
+	if save.Action != audit.ComposeSave || save.Commit == "" || save.Detail != "chore(main-stack): bump web latest → 1.27" {
+		t.Errorf("save = %+v", save)
+	}
+
+	// Filters.
+	got := decode[[]audit.Event](t, e.do("GET", "/api/audit?action=env.save", ""))
+	if len(got) != 1 {
+		t.Errorf("action filter: %+v", got)
+	}
+	got = decode[[]audit.Event](t, e.do("GET", "/api/audit?stack=other", ""))
+	if len(got) != 0 {
+		t.Errorf("stack filter: %+v", got)
+	}
+	if w := e.do("GET", "/api/audit?since=yesterday", ""); w.Code != http.StatusBadRequest {
+		t.Errorf("bad since: %d", w.Code)
+	}
+	if w := e.do("GET", "/api/audit", "", "Authorization", ""); w.Code != http.StatusUnauthorized {
+		t.Errorf("no token: %d", w.Code)
 	}
 }

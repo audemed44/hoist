@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/audemed44/hoist/internal/audit"
 	"github.com/audemed44/hoist/internal/compose"
 	"github.com/audemed44/hoist/internal/config"
 	"github.com/audemed44/hoist/internal/envfile"
@@ -125,6 +126,35 @@ type bump struct {
 // applyUpdates commits version bumps to the compose file (pushed like any
 // edit), then deploys the bumped services plus the ones in pull.
 func (s *Server) applyUpdates(st config.Stack, bumps []bump, pull []string, trigger string) (*jobs.Job, error) {
+	ev := audit.Event{Stack: st.Name, Action: audit.UpdateApply, Trigger: trigger, Detail: updateDetail(bumps, pull)}
+	for _, b := range bumps {
+		ev.Services = append(ev.Services, b.Service)
+	}
+	ev.Services = append(ev.Services, pull...)
+	job, commit, err := s.applyUpdatesRun(st, bumps, pull, trigger)
+	ev.Commit = commit
+	if err != nil {
+		ev.Result, ev.Error = audit.Failed, err.Error()
+	} else {
+		ev.Job = job.ID
+	}
+	s.record(ev)
+	return job, err
+}
+
+// updateDetail is e.g. "shelfloom → 0.5; new image for foyer".
+func updateDetail(bumps []bump, pull []string) string {
+	var parts []string
+	for _, b := range bumps {
+		parts = append(parts, b.Service+" → "+b.Tag)
+	}
+	if len(pull) > 0 {
+		parts = append(parts, "new image for "+strings.Join(pull, ", "))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func (s *Server) applyUpdatesRun(st config.Stack, bumps []bump, pull []string, trigger string) (*jobs.Job, string, error) {
 	services := append([]string{}, pull...)
 	commit := ""
 	if len(bumps) > 0 {
@@ -132,37 +162,37 @@ func (s *Server) applyUpdates(st config.Stack, bumps []bump, pull []string, trig
 		defer cancel()
 		repo, err := gitrepo.Open(ctx, st.Path)
 		if err != nil {
-			return nil, err
+			return nil, commit, err
 		}
 		if repo != nil {
 			status, err := repo.Status(ctx, st.ComposePath(), 0)
 			if err != nil {
-				return nil, err
+				return nil, commit, err
 			}
 			if status.Modified {
-				return nil, errors.New("the compose file has uncommitted changes; commit or discard them first")
+				return nil, commit, errors.New("the compose file has uncommitted changes; commit or discard them first")
 			}
 		}
 		current, err := os.ReadFile(st.ComposePath())
 		if err != nil {
-			return nil, err
+			return nil, commit, err
 		}
 		content := compose.ToLF(current)
 		for _, b := range bumps {
 			if content, _, err = compose.BumpImage(content, b.Image, b.Tag); err != nil {
-				return nil, fmt.Errorf("%s: %w", b.Service, err)
+				return nil, commit, fmt.Errorf("%s: %w", b.Service, err)
 			}
 			services = append(services, b.Service)
 		}
 		if err := compose.Validate(ctx, st, content); err != nil {
-			return nil, err
+			return nil, commit, err
 		}
 		if err := envfile.WriteAtomic(st.ComposePath(), content, 0o644); err != nil {
-			return nil, err
+			return nil, commit, err
 		}
 		var res saveResult
 		if err := s.commit(ctx, st, compose.Summary(st.Name, current, content), &res); err != nil {
-			return nil, fmt.Errorf("the compose file was changed, but the commit failed: %w", err)
+			return nil, commit, fmt.Errorf("the compose file was changed, but the commit failed: %w", err)
 		}
 		commit = res.Commit
 		if res.PushError != "" {
@@ -171,10 +201,10 @@ func (s *Server) applyUpdates(st config.Stack, bumps []bump, pull []string, trig
 	}
 	job, _, err := s.startDeploy(st, services, trigger, commit)
 	if err != nil {
-		return nil, err
+		return nil, commit, err
 	}
 	s.Updates.Forget(st.Name, services...)
-	return job, nil
+	return job, commit, nil
 }
 
 // applyUpdate bumps one service to a version the check found, and deploys it.
@@ -215,7 +245,7 @@ func (s *Server) applyUpdate(w http.ResponseWriter, r *http.Request) {
 	} else {
 		pull = []string{service}
 	}
-	job, err := s.applyUpdates(st, bumps, pull, "ui")
+	job, err := s.applyUpdates(st, bumps, pull, triggerOf(r))
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return

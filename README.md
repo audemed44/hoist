@@ -30,6 +30,10 @@ that idles at about 4 MB of RAM. A lightweight replacement for
   committed like any edit), or let a policy apply them for you.
 - **Self-update**: Hoist can deploy its own stack. A short-lived helper
   container runs that deploy, so it finishes while Hoist is replaced.
+- **Activity**: an audit log of every deploy, edit, commit, `.env` change
+  and update, with where it came from (browser, API token, Foyer or an
+  update policy) and how it ended. Filter by stack, action, trigger and
+  result. `.env` edits are recorded by key name only, never values.
 - **Foyer**: serves a card in the
   [Foyer widget format](https://github.com/audemed44/foyer/blob/main/docs/app-widgets.md)
   with a Deploy button per stack.
@@ -132,7 +136,7 @@ Set the repo's remote to `git@github.com:you/stacks.git`, and give Hoist:
 | `HOIST_TOKEN` | (required) | What you sign in with, and Foyer's key; anything but empty |
 | `HOIST_READ_ONLY` | `false` | Show everything, change nothing |
 | `HOIST_PORT` | `8080` | |
-| `HOIST_CONFIG_DIR` | `/config` | `hoist.yaml` and the deploy logs (`jobs/`) |
+| `HOIST_CONFIG_DIR` | `/config` | `hoist.yaml`, the deploy logs (`jobs/`) and the audit log (`hoist.db`) |
 | `HOIST_COMPOSE` | `docker-compose` | Compose binary |
 | `HOIST_HOST_HOME` | `$HOME` | Your home folder on the host; compose expands `~/` in bind mounts with it |
 

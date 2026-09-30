@@ -33,7 +33,7 @@ type Job struct {
 	State    State      `json:"state"`
 	Started  time.Time  `json:"started"`
 	Finished *time.Time `json:"finished,omitempty"`
-	// Trigger is where the deploy came from: "ui", "api" or "foyer".
+	// Trigger is where the deploy came from: "ui", "api", "foyer" or "auto".
 	Trigger string `json:"trigger"`
 	// Self is set when Hoist deployed its own stack through the helper.
 	Self   bool   `json:"self,omitempty"`
@@ -88,6 +88,9 @@ func ValidID(id string) bool { return idRe.MatchString(id) }
 type Store struct {
 	dir string
 	mu  sync.Mutex
+	// OnFinish, if set, is called after a job is marked done or failed, in
+	// whichever process finished it.
+	OnFinish func(*Job)
 }
 
 func NewStore(dir string) (*Store, error) {
@@ -139,7 +142,13 @@ func (s *Store) Finish(j *Job, res *Result, err error) error {
 	if err != nil {
 		j.State, j.Error = Failed, err.Error()
 	}
-	return s.Save(j)
+	if err := s.Save(j); err != nil {
+		return err
+	}
+	if s.OnFinish != nil {
+		s.OnFinish(j)
+	}
+	return nil
 }
 
 func (s *Store) write(j *Job) error {
