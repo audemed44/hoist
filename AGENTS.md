@@ -20,6 +20,10 @@ Config is `/config/hoist.yaml`; deploy records and logs are files in
   background work is the update check (`internal/updates`, every
   `updates.every`, default 6h): manifest HEADs and tag lists, never pulls.
   Git fetches happen on page loads, at most every two minutes.
+- With `HOIST_GATEHOUSE_URL`, Hoist reads Gatehouse's discovery API
+  (`internal/sleeping`, cached 20s) to learn which containers it stopped on
+  purpose. Those are shown asleep, aren't planned as a start, and a deploy
+  that only started them stops them again (`deploy.backToSleep`).
 - The Go module has two direct dependencies: yaml.v3 and modernc.org/sqlite
   (pure Go, so the build stays static and cgo-free; the audit log). Justify
   any new one. The audit database uses one connection that closes when

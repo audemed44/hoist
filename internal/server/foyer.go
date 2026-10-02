@@ -58,11 +58,12 @@ func (s *Server) foyerWidget(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 
-	var running, total, pending, available int
+	var running, total, pending, available, asleep int
 	var last *jobs.Job
 	out := foyerWidget{Version: 1, ItemsTitle: "Stacks", ItemsLayout: "list", Items: []foyerItem{}}
 	for _, info := range infos {
 		running += info.Counts.Running
+		asleep += info.Counts.Asleep
 		total += info.Counts.Services
 		pending += info.Counts.Pending
 		available += info.Counts.Updates
@@ -73,6 +74,9 @@ func (s *Server) foyerWidget(w http.ResponseWriter, r *http.Request) {
 			Title:    info.Name,
 			Subtitle: fmt.Sprintf("%d/%d running", info.Counts.Running, info.Counts.Services),
 			URL:      "/stacks/" + info.Name,
+		}
+		if info.Counts.Asleep > 0 {
+			item.Subtitle += fmt.Sprintf(" · %d asleep", info.Counts.Asleep)
 		}
 		if info.Counts.Pending > 0 {
 			item.Subtitle += fmt.Sprintf(" · %d to deploy", info.Counts.Pending)
@@ -104,11 +108,15 @@ func (s *Server) foyerWidget(w http.ResponseWriter, r *http.Request) {
 		out.Items = append(out.Items, item)
 	}
 	runTone := "good"
-	if running < total {
+	if running+asleep < total {
 		runTone = "warn"
 	}
+	runCaption := "containers"
+	if asleep > 0 {
+		runCaption = fmt.Sprintf("containers · %d asleep", asleep)
+	}
 	out.Stats = []foyerStat{
-		{Label: "Running", Value: strconv.Itoa(running), Unit: "/" + strconv.Itoa(total), Caption: "containers", Tone: runTone},
+		{Label: "Running", Value: strconv.Itoa(running), Unit: "/" + strconv.Itoa(total), Caption: runCaption, Tone: runTone},
 		{Label: "To deploy", Value: strconv.Itoa(pending), Caption: "services changed", Tone: map[bool]string{true: "accent"}[pending > 0]},
 		{Label: "Updates", Value: strconv.Itoa(available), Caption: "images and versions", Tone: map[bool]string{true: "accent"}[available > 0]},
 	}

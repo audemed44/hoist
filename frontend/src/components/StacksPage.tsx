@@ -16,6 +16,7 @@ export function StacksPage(props: { readOnly: boolean }) {
     return error ? <ErrorNote>{error}</ErrorNote> : <div class="skeleton page-skeleton" />;
   }
   const running = stacks.reduce((n, s) => n + s.counts.running, 0);
+  const asleep = stacks.reduce((n, s) => n + (s.counts.asleep ?? 0), 0);
   const total = stacks.reduce((n, s) => n + s.counts.services, 0);
   const pending = stacks.reduce((n, s) => n + s.counts.pending, 0);
   const available = stacks.reduce((n, s) => n + s.counts.updates, 0);
@@ -35,8 +36,8 @@ export function StacksPage(props: { readOnly: boolean }) {
           <Figure
             value={running}
             unit={`/${total}`}
-            label="Running"
-            tone={running < total ? "warn" : ""}
+            label={asleep ? `Running · ${asleep} asleep` : "Running"}
+            tone={running + asleep < total ? "warn" : ""}
           />
           <Figure value={pending} label="To deploy" tone={pending ? "accent" : ""} />
           <Figure value={available} label="Updates" tone={available ? "accent" : ""} />
@@ -109,6 +110,7 @@ function StackRow(props: {
         <span class="eyebrow">
           <Dot tone={stackTone(s)} />
           {s.counts.running}/{s.counts.services} running
+          {s.counts.asleep ? ` · ${s.counts.asleep} asleep` : ""}
         </span>
       </SectionHead>
       <div class="stack-row-body">

@@ -42,3 +42,17 @@ func TestDiff(t *testing.T) {
 		t.Errorf("empty summary = %q", s)
 	}
 }
+
+func TestBackToSleep(t *testing.T) {
+	before := []docker.Container{
+		{Name: "convertx", Service: "convertx", State: "exited"},
+		{Name: "bentopdf", Service: "bentopdf", State: "exited"},
+		{Name: "it-tools", Service: "it-tools", State: "exited"},
+	}
+	res := &jobs.Result{Started: []string{"convertx", "it-tools"}, Recreated: []string{"bentopdf"}}
+	// it-tools was stopped by hand, not by Gatehouse; bentopdf was recreated.
+	got := backToSleep(res, before, []string{"convertx", "bentopdf"})
+	if !reflect.DeepEqual(got, []string{"convertx"}) {
+		t.Fatalf("got %v", got)
+	}
+}

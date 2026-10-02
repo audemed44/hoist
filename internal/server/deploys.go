@@ -89,7 +89,12 @@ func (s *Server) startDeploy(st config.Stack, services []string, trigger, commit
 		}
 	}
 	self := s.isSelf(st)
-	job, err := s.Jobs.Create(jobs.Job{Stack: st.Name, Services: services, Trigger: trigger, Commit: commit, Dirty: dirty, Self: self})
+	var asleep []string
+	for name := range s.Sleep.Asleep(ctx) {
+		asleep = append(asleep, name)
+	}
+	slices.Sort(asleep)
+	job, err := s.Jobs.Create(jobs.Job{Stack: st.Name, Services: services, Trigger: trigger, Commit: commit, Dirty: dirty, Self: self, Asleep: asleep})
 	if err != nil {
 		return nil, http.StatusInternalServerError, err
 	}

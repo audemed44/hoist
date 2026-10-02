@@ -40,9 +40,12 @@ type Job struct {
 	Commit string `json:"commit,omitempty"`
 	// Dirty is set when the compose file had uncommitted changes, so what
 	// was deployed isn't exactly Commit.
-	Dirty  bool    `json:"dirty,omitempty"`
-	Result *Result `json:"result,omitempty"`
-	Error  string  `json:"error,omitempty"`
+	Dirty bool `json:"dirty,omitempty"`
+	// Asleep are the containers Gatehouse had put to sleep when the deploy
+	// started; ones the deploy only started are stopped again.
+	Asleep []string `json:"asleep,omitempty"`
+	Result *Result  `json:"result,omitempty"`
+	Error  string   `json:"error,omitempty"`
 }
 
 // Result is what the deploy changed, by service.

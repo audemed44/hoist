@@ -32,7 +32,7 @@ func Run(ctx context.Context, dock *docker.Client, store *jobs.Store, stack conf
 		return err
 	}
 	defer log.Close()
-	res, err := run(ctx, dock, stack, j.Services, log)
+	res, err := run(ctx, dock, stack, j.Services, j.Asleep, log)
 	if err != nil {
 		fmt.Fprintf(log, "\n✗ %v\n", err)
 	} else {
@@ -44,7 +44,7 @@ func Run(ctx context.Context, dock *docker.Client, store *jobs.Store, stack conf
 	return err
 }
 
-func run(ctx context.Context, dock *docker.Client, stack config.Stack, services []string, log io.Writer) (*jobs.Result, error) {
+func run(ctx context.Context, dock *docker.Client, stack config.Stack, services, asleep []string, log io.Writer) (*jobs.Result, error) {
 	before, err := dock.Project(ctx, stack.Project)
 	if err != nil {
 		return nil, fmt.Errorf("list containers: %w", err)
@@ -70,7 +70,30 @@ func run(ctx context.Context, dock *docker.Client, stack config.Stack, services 
 	if upErr != nil {
 		return res, fmt.Errorf("up failed: %w", upErr)
 	}
+	if back := backToSleep(res, before, asleep); len(back) > 0 {
+		stop := append([]string{"stop"}, back...)
+		fmt.Fprintf(log, "\n# Gatehouse had put these to sleep; the deploy only started them.\n$ docker compose %s\n", join(stop))
+		if err := compose.Run(ctx, stack, log, stop...); err != nil {
+			fmt.Fprintf(log, "could not put them back to sleep: %v\n", err)
+		} else {
+			res.Started = slices.DeleteFunc(res.Started, func(s string) bool { return slices.Contains(back, s) })
+		}
+	}
 	return res, nil
+}
+
+// backToSleep lists the services the deploy merely started whose
+// containers Gatehouse had put to sleep. Recreated ones stay up: they run
+// something new, and Gatehouse stops them again once they're idle.
+func backToSleep(res *jobs.Result, before []docker.Container, asleep []string) []string {
+	var out []string
+	for _, c := range before {
+		if slices.Contains(asleep, c.Name) && slices.Contains(res.Started, c.Service) && !slices.Contains(out, c.Service) {
+			out = append(out, c.Service)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func join(args []string) string { return strings.Join(args, " ") }

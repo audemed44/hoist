@@ -18,15 +18,19 @@ import (
 	"github.com/audemed44/hoist/internal/docker"
 	"github.com/audemed44/hoist/internal/jobs"
 	"github.com/audemed44/hoist/internal/registry"
+	"github.com/audemed44/hoist/internal/sleeping"
 	"github.com/audemed44/hoist/internal/updates"
 )
 
 type Options struct {
-	Config   *config.Config
-	Docker   *docker.Client
-	Jobs     *jobs.Store
-	Audit    *audit.Log
-	Updates  *updates.Checker
+	Config  *config.Config
+	Docker  *docker.Client
+	Jobs    *jobs.Store
+	Audit   *audit.Log
+	Updates *updates.Checker
+	// Sleep knows which containers Gatehouse has put to sleep; nil without
+	// Gatehouse.
+	Sleep    *sleeping.Client
 	Token    string
 	ReadOnly bool
 	Web      fs.FS

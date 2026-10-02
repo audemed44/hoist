@@ -152,6 +152,14 @@ Set the repo's remote to `git@github.com:you/stacks.git`, and give Hoist:
 | `HOIST_CONFIG_DIR` | `/config` | `hoist.yaml`, the deploy logs (`jobs/`) and the audit log (`hoist.db`) |
 | `HOIST_COMPOSE` | `docker-compose` | Compose binary |
 | `HOIST_HOST_HOME` | `$HOME` | Your home folder on the host; compose expands `~/` in bind mounts with it |
+| `HOIST_GATEHOUSE_URL` | | [Gatehouse](https://github.com/audemed44/gatehouse)'s admin port, e.g. `http://host.docker.internal:9140` |
+| `HOIST_GATEHOUSE_TOKEN` | | Its discovery token (`GATEHOUSE_DISCOVERY_TOKEN`) |
+
+**With Gatehouse's scale-to-zero,** containers it stopped on purpose show as
+*asleep* rather than waiting for a start: they don't count as a change to
+deploy or as down. A deploy that only starts them stops them again
+afterwards. A deploy that recreates one (new image or config) leaves it
+running, and Gatehouse puts it back to sleep once it's idle.
 
 **Keep compose in step with the host.** The image ships docker compose
 5.5.1. Compose decides whether to recreate a container by comparing a hash

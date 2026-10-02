@@ -50,12 +50,16 @@ export function StackPage(props: { name: string; tab: Tab; readOnly: boolean }) 
         <h1 class="page-title">{stack.name}</h1>
         <div class="page-bar">
           <div class="figures">
-            <div class={`figure ${stack.counts.running < stack.counts.services ? "warn" : ""}`}>
+            <div
+              class={`figure ${stack.counts.running + (stack.counts.asleep ?? 0) < stack.counts.services ? "warn" : ""}`}
+            >
               <div class="figure-value">
                 {stack.counts.running}
                 <span class="figure-unit">/{stack.counts.services}</span>
               </div>
-              <div class="eyebrow figure-label">Running</div>
+              <div class="eyebrow figure-label">
+                {stack.counts.asleep ? `Running · ${stack.counts.asleep} asleep` : "Running"}
+              </div>
             </div>
             <div class={`figure ${stack.counts.pending ? "accent" : ""}`}>
               <div class="figure-value">{stack.counts.pending}</div>
