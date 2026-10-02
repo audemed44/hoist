@@ -270,6 +270,28 @@ type ServiceState struct {
 	Container *docker.Container `json:"container,omitempty"`
 	// Orphan is a container whose service is no longer in the file.
 	Orphan bool `json:"orphan,omitempty"`
+	// Asleep is set when Gatehouse stopped the container on purpose
+	// (scale-to-zero): its state, e.g. "sleeping". It isn't waiting for a
+	// start.
+	Asleep string `json:"asleep,omitempty"`
+}
+
+// MarkAsleep notes the services whose stopped containers Gatehouse put to
+// sleep (container name → state), and drops the start a deploy would
+// otherwise plan for them.
+func MarkAsleep(states []ServiceState, asleep map[string]string) {
+	for i := range states {
+		st := &states[i]
+		if st.Container == nil || st.Container.State == "running" {
+			continue
+		}
+		if state, ok := asleep[st.Container.Name]; ok {
+			st.Asleep = state
+			if st.Change == Start {
+				st.Change = Unchanged
+			}
+		}
+	}
 }
 
 // Plan compares the resolved services with the running containers. It can't

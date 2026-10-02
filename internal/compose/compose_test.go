@@ -261,3 +261,25 @@ func TestLint(t *testing.T) {
 		t.Error("isLatest")
 	}
 }
+
+func TestMarkAsleep(t *testing.T) {
+	states := []ServiceState{
+		{Name: "convertx", Change: Start, Container: &docker.Container{Name: "convertx", State: "exited"}},
+		{Name: "bentopdf", Change: Recreate, Container: &docker.Container{Name: "bentopdf", State: "exited"}},
+		{Name: "manual", Change: Start, Container: &docker.Container{Name: "manual", State: "exited"}},
+		{Name: "awake", Container: &docker.Container{Name: "awake", State: "running"}},
+	}
+	MarkAsleep(states, map[string]string{"convertx": "sleeping", "bentopdf": "sleeping", "awake": "waking"})
+	if states[0].Asleep != "sleeping" || states[0].Change != Unchanged {
+		t.Fatalf("sleeping: %+v", states[0])
+	}
+	if states[1].Asleep != "sleeping" || states[1].Change != Recreate {
+		t.Fatalf("a recreate still has to happen: %+v", states[1])
+	}
+	if states[2].Asleep != "" || states[2].Change != Start {
+		t.Fatalf("stopped by hand: %+v", states[2])
+	}
+	if states[3].Asleep != "" {
+		t.Fatalf("running: %+v", states[3])
+	}
+}

@@ -65,11 +65,24 @@ export function ServicesTab(props: {
             )}
           </span>
           <span class="svc-status">
-            {s.container ? s.container.status : <span class="muted">No container</span>}
+            {s.asleep ? (
+              <span title="Stopped by Gatehouse until someone uses it">Asleep</span>
+            ) : s.container ? (
+              s.container.status
+            ) : (
+              <span class="muted">No container</span>
+            )}
           </span>
           <span>
             {s.change ? (
               <span class={`chip chip-${s.change}`}>{s.change}</span>
+            ) : s.asleep ? (
+              <span
+                class="chip chip-accent"
+                title="Gatehouse's scale-to-zero; a deploy leaves it asleep"
+              >
+                {s.asleep}
+              </span>
             ) : s.orphan ? (
               <span class="chip" title="Not in the compose file; remove_orphans is off">
                 orphan

@@ -16,6 +16,8 @@ export interface ServiceState {
   change?: Change;
   container?: Container;
   orphan?: boolean;
+  /** Stopped on purpose by Gatehouse's scale-to-zero, e.g. "sleeping". */
+  asleep?: string;
 }
 
 export interface GitStatus {
@@ -62,7 +64,7 @@ export interface StackInfo {
   file: string;
   project: string;
   self: boolean;
-  counts: { services: number; running: number; pending: number; updates: number };
+  counts: { services: number; running: number; pending: number; updates: number; asleep: number };
   services: ServiceState[];
   error?: string;
   git?: GitStatus;

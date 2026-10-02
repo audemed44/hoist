@@ -25,6 +25,7 @@ import (
 	"github.com/audemed44/hoist/internal/docker"
 	"github.com/audemed44/hoist/internal/jobs"
 	"github.com/audemed44/hoist/internal/server"
+	"github.com/audemed44/hoist/internal/sleeping"
 	"github.com/audemed44/hoist/internal/updates"
 	"github.com/audemed44/hoist/web"
 )
@@ -89,7 +90,11 @@ func main() {
 	}
 	readOnly := os.Getenv("HOIST_READ_ONLY") == "true" || os.Getenv("HOIST_READ_ONLY") == "1"
 	checker := updates.New(cfg, dock, filepath.Join(configDir, "updates.json"))
-	app := server.New(server.Options{Config: cfg, Docker: dock, Jobs: store, Audit: auditLog, Updates: checker, Token: token, ReadOnly: readOnly, Web: dist})
+	var sleep *sleeping.Client
+	if u := os.Getenv("HOIST_GATEHOUSE_URL"); u != "" {
+		sleep = sleeping.New(u, os.Getenv("HOIST_GATEHOUSE_TOKEN"))
+	}
+	app := server.New(server.Options{Config: cfg, Docker: dock, Jobs: store, Audit: auditLog, Updates: checker, Sleep: sleep, Token: token, ReadOnly: readOnly, Web: dist})
 	srv := &http.Server{
 		Addr:              ":" + env("HOIST_PORT", "8080"),
 		Handler:           app.Handler(),

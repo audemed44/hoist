@@ -109,7 +109,7 @@ export function gitLabel(git: GitStatus | undefined): { text: string; tone: Tone
 
 export function stackTone(s: StackInfo): Tone {
   if (s.error || s.active?.state === "failed" || s.last?.state === "failed") return "bad";
-  if (s.counts.running < s.counts.services) return "warn";
+  if (s.counts.running + (s.counts.asleep ?? 0) < s.counts.services) return "warn";
   return "good";
 }
 

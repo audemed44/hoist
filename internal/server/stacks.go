@@ -63,6 +63,7 @@ type Counts struct {
 	Services int `json:"services"`
 	Running  int `json:"running"`
 	Pending  int `json:"pending"` // services a deploy would change
+	Asleep   int `json:"asleep"`  // stopped on purpose by Gatehouse
 	Updates  int `json:"updates"` // services with a newer image or version
 }
 
@@ -118,6 +119,7 @@ func (s *Server) stackInfo(ctx context.Context, st config.Stack, fetch bool) Sta
 		info.Error = "docker: " + cerr.Error()
 	default:
 		info.Services = compose.Plan(svcs, containers, st.ShouldRemoveOrphans())
+		compose.MarkAsleep(info.Services, s.Sleep.Asleep(ctx))
 	}
 	if info.Services == nil {
 		info.Services = []compose.ServiceState{}
@@ -132,6 +134,9 @@ func (s *Server) stackInfo(ctx context.Context, st config.Stack, fetch bool) Sta
 		info.Counts.Services++
 		if svc.Container != nil && svc.Container.State == "running" {
 			info.Counts.Running++
+		}
+		if svc.Asleep != "" {
+			info.Counts.Asleep++
 		}
 	}
 	if s.Updates != nil {
