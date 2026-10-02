@@ -145,3 +145,31 @@ func TestConfig(t *testing.T) {
 		t.Errorf("config = %+v", cfg)
 	}
 }
+
+func TestDigestForAndPinned(t *testing.T) {
+	digests := []string{"ghcr.io/a/web@sha256:1", "nginx@sha256:2"}
+	for _, c := range []struct{ ref, wantRef, want string }{
+		{"ghcr.io/a/web:latest", "ghcr.io/a/web:latest", "sha256:1"},
+		{"nginx:1.27", "nginx:1.27", "sha256:2"},
+		{"docker.io/library/nginx", "docker.io/library/nginx", "sha256:2"},
+		{"ghcr.io/a/other:latest", "ghcr.io/a/other:latest", ""},
+		{"ghcr.io/a/web@sha256:9", "ghcr.io/a/web@sha256:9", "sha256:9"},
+		// The tag moved on, so docker shows the image ID.
+		{"sha256:abc", "ghcr.io/a/web", "sha256:1"},
+	} {
+		ref, d := DigestFor(c.ref, digests)
+		if ref != c.wantRef || d != c.want {
+			t.Errorf("DigestFor(%s) = %s, %s", c.ref, ref, d)
+		}
+	}
+	for ref, want := range map[string]string{
+		"ghcr.io/a/web:latest":    "ghcr.io/a/web@sha256:1",
+		"nginx:1.27":              "nginx@sha256:1",
+		"linuxserver/kopia:0.1":   "linuxserver/kopia@sha256:1",
+		"ghcr.io/a/web@sha256:00": "ghcr.io/a/web@sha256:1",
+	} {
+		if got := Pinned(ref, "sha256:1"); got != want {
+			t.Errorf("Pinned(%s) = %s", ref, got)
+		}
+	}
+}

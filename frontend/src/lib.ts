@@ -68,6 +68,8 @@ export const ACTION_LABEL: Record<string, string> = {
   "update.apply": "Update",
   "stack.adopt": "Stack adopted",
   "stack.create": "Stack created",
+  "rollback.pin": "Rollback",
+  "rollback.resume": "Resumed :latest",
 };
 
 /** A stack name as the server accepts it: lowercase letters, digits, - and _. */
@@ -213,4 +215,32 @@ export function insertService(content: string, svc: NewService): string {
   if (spaced && end > start + 1) block.unshift("");
   lines.splice(end, 0, ...block);
   return lines.join("\n") + "\n";
+}
+
+/** "sha256:0123456789ab…" → "0123456789ab". */
+export function shortDigest(d: string | undefined): string {
+  return d ? d.replace(/^sha256:/, "").slice(0, 12) : "";
+}
+
+/** How a deployed image reads: its commit when it has one, else its digest. */
+export function imageVersion(i: { revision?: string; digest?: string; image_id?: string }): string {
+  if (i.revision) return i.revision.slice(0, 7);
+  return shortDigest(i.digest ?? i.image_id);
+}
+
+/** When a job started, from its ID ("20261002-150405-abcdef", UTC). */
+export function jobTime(id: string): string {
+  const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-/.exec(id);
+  return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z` : "";
+}
+
+/** A deploy's time as "2 Oct, 15:04" in local time. */
+export function when(iso: string): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

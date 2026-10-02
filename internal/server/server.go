@@ -43,6 +43,7 @@ type Server struct {
 	mu       sync.Mutex
 	starting map[string]bool // stacks whose deploy is being started
 	plans    map[string]cachedServices
+	judged   map[string]judgement // when each stack's latest deploy was last looked at
 
 	selfOnce sync.Once
 	self     *docker.Self // nil when Hoist isn't in a container
@@ -53,7 +54,7 @@ type Server struct {
 func New(o Options) *Server {
 	return &Server{
 		Options: o, session: sessionValue(o.Token),
-		starting: map[string]bool{}, plans: map[string]cachedServices{},
+		starting: map[string]bool{}, plans: map[string]cachedServices{}, judged: map[string]judgement{},
 		registry: registry.New(),
 	}
 }
@@ -81,6 +82,10 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/stacks/{name}/drift", s.getDrift)
 	api.HandleFunc("POST /api/stacks/{name}/git/discard", s.writable(s.gitDiscard))
 	api.HandleFunc("POST /api/stacks/{name}/deploy", s.writable(s.postDeploy))
+	api.HandleFunc("GET /api/stacks/{name}/deploys", s.listDeploys)
+	api.HandleFunc("GET /api/stacks/{name}/rollback", s.getRollback)
+	api.HandleFunc("POST /api/stacks/{name}/rollback", s.writable(s.postRollback))
+	api.HandleFunc("POST /api/stacks/{name}/resume", s.writable(s.postResume))
 	api.HandleFunc("GET /api/updates", s.getUpdates)
 	api.HandleFunc("POST /api/updates/check", s.postCheck)
 	api.HandleFunc("POST /api/stacks/{name}/services/{service}/update", s.writable(s.applyUpdate))

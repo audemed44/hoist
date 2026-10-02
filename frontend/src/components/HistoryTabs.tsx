@@ -1,11 +1,12 @@
 import { useState } from "preact/hooks";
 import { api } from "../api";
 import { useData } from "../hooks";
-import { ago, duration, jobSummary } from "../lib";
+import { ago, imageVersion, jobSummary, jobTime, when } from "../lib";
 import { navigate } from "../router";
-import type { Commit, ComposeFile, StackInfo } from "../types";
+import type { Commit, ComposeFile, DeployRecord, Job, StackInfo } from "../types";
 import { CodeEditor } from "./CodeEditor";
 import { restoreVersion } from "./ComposeTab";
+import { RollbackDialog } from "./Rollback";
 import { Dialog, Dot, ErrorNote } from "./ui";
 
 /** The compose file's commits, with a way back to any of them. */
@@ -97,30 +98,110 @@ function VersionDialog(props: {
   );
 }
 
-export function DeploysTab(props: { stack: StackInfo }) {
-  const { data: jobs, error } = useData(() => api.jobs(props.stack.name, 50), 5000, [
-    props.stack.name,
-  ]);
-  if (!jobs) return error ? <ErrorNote>{error}</ErrorNote> : <div class="skeleton list-skeleton" />;
-  if (!jobs.length) return <div class="empty">No deploys through Hoist yet.</div>;
+/**
+ * Deploys, newest first: running ones, then the finished ones Hoist
+ * recorded, marked good once they ran without trouble. Any good one other
+ * than the current can be deployed again (a rollback).
+ */
+export function DeploysTab(props: { stack: StackInfo; readOnly: boolean }) {
+  const name = props.stack.name;
+  const { data, error } = useData(
+    () => Promise.all([api.jobs(name, 100), api.deploys(name)]),
+    5000,
+    [name],
+  );
+  const [again, setAgain] = useState("");
+  if (!data) return error ? <ErrorNote>{error}</ErrorNote> : <div class="skeleton list-skeleton" />;
+  const [jobs, records] = data;
+  const byId = new Map(jobs.map((j) => [j.id, j]));
+  const running = jobs.filter((j) => j.state === "running");
+  if (!running.length && !records.length) {
+    return <div class="empty">No deploys through Hoist yet.</div>;
+  }
   return (
     <div class="list">
-      {jobs.map((j) => (
+      {running.map((j) => (
         <a key={j.id} class="list-row" href={`/jobs/${j.id}`}>
-          <Dot tone={j.state === "running" ? "accent" : j.state === "failed" ? "bad" : "good"} />
+          <Dot tone="accent" />
           <span class="list-main">
-            <span class={`list-title ${j.state === "failed" ? "tone-bad" : ""}`}>
-              {jobSummary(j)}
-            </span>
+            <span class="list-title">{jobSummary(j)}</span>
             <span class="list-sub">
-              {ago(j.started)}
-              {j.finished && ` · took ${duration(j)}`} · from {j.trigger}
-              {j.services?.length ? ` · only ${j.services.join(", ")}` : ""}
-              {j.commit && ` · at ${j.commit}${j.dirty ? " + uncommitted changes" : ""}`}
+              {ago(j.started)} · from {j.trigger}
             </span>
           </span>
         </a>
       ))}
+      {records.map((d) => (
+        <DeployRow
+          key={d.job}
+          record={d}
+          job={byId.get(d.job)}
+          readOnly={props.readOnly || !!props.stack.active}
+          onAgain={() => setAgain(d.job)}
+        />
+      ))}
+      {again && <RollbackDialog stack={name} to={again} onClose={() => setAgain("")} />}
+    </div>
+  );
+}
+
+function DeployRow(props: {
+  record: DeployRecord;
+  job?: Job;
+  readOnly: boolean;
+  onAgain: () => void;
+}) {
+  const d = props.record;
+  const j = props.job;
+  const baseline = d.trigger === "baseline";
+  const title = baseline
+    ? "The stack as Hoist first saw it"
+    : j
+      ? jobSummary(j)
+      : d.result === "failed"
+        ? "Failed"
+        : "Deployed";
+  const own = d.images.filter((i) => i.revision);
+  const body = (
+    <span class="list-main">
+      <span class={`list-title ${d.result === "failed" ? "tone-bad" : ""}`}>{title}</span>
+      <span class="list-sub">
+        {when(d.time)} · {ago(d.time)}
+        {!baseline && ` · from ${d.trigger}`}
+        {d.services.length ? ` · only ${d.services.join(", ")}` : ""}
+        {d.commit && ` · at ${d.commit}${d.dirty ? " + uncommitted changes" : ""}`}
+        {d.rollback && ` · rolled back to ${when(jobTime(d.rollback))}`}
+      </span>
+      {own.length > 0 && (
+        <span class="list-sub mono">
+          {own.map((i) => `${i.service}@${imageVersion(i)}`).join("  ")}
+        </span>
+      )}
+    </span>
+  );
+  return (
+    <div class="list-row deploy-row">
+      <Dot tone={d.result === "failed" ? "bad" : d.good_at ? "good" : ""} />
+      {baseline ? body : <a href={`/jobs/${d.job}`}>{body}</a>}
+      <span class="spacer" />
+      {d.current && <span class="chip chip-accent">current</span>}
+      {d.good_at ? (
+        <span class="chip" title={`Ran without trouble; good since ${when(d.good_at)}`}>
+          good
+        </span>
+      ) : (
+        d.result === "ok" &&
+        d.current && (
+          <span class="chip" title="Marked good once it has run without trouble for a while">
+            proving
+          </span>
+        )
+      )}
+      {!d.current && d.result === "ok" && !props.readOnly && (
+        <button class="btn btn-small" onClick={props.onAgain}>
+          Deploy this version again
+        </button>
+      )}
     </div>
   );
 }

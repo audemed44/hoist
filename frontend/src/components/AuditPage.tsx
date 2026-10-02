@@ -12,6 +12,7 @@ const ACTIONS: [string, string][] = [
   ["compose.save", "Compose edits"],
   ["env.save", "Environment edits"],
   ["update.apply", "Updates"],
+  ["rollback.", "Rollbacks"],
   ["git.", "Git"],
   ["stack.", "Stacks added"],
 ];

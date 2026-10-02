@@ -54,8 +54,82 @@ export interface Job {
   commit?: string;
   /** The compose file had uncommitted changes when this deployed. */
   dirty?: boolean;
+  /** The earlier deploy this one rolled back to. */
+  rollback?: string;
+  /** Ran with images pinned by digest (the stack was rolled back). */
+  pinned?: boolean;
   result?: JobResult;
   error?: string;
+}
+
+/** What one container of a stack ran after a deploy. */
+export interface DeployedImage {
+  service: string;
+  container: string;
+  container_id: string;
+  /** The image as compose was given it, e.g. ghcr.io/a/b:latest. */
+  ref: string;
+  image_id: string;
+  /** Registry digest; empty for images built locally. */
+  digest?: string;
+  /** OCI labels: the repository it was built from, and the commit. */
+  source?: string;
+  revision?: string;
+  state: string;
+}
+
+/** A finished deploy and what it left running. */
+export interface DeployRecord {
+  job: string;
+  time: string;
+  finished: string;
+  stack: string;
+  services: string[];
+  /** ui, api, foyer, auto, releases, or baseline (recorded when Hoist first saw the stack). */
+  trigger: string;
+  commit?: string;
+  dirty?: boolean;
+  result: "ok" | "failed";
+  rollback?: string;
+  pinned?: boolean;
+  /** When it had run long enough without trouble to roll back to. */
+  good_at?: string;
+  images: DeployedImage[];
+  /** The deploy the stack runs now. */
+  current?: boolean;
+}
+
+export interface RollbackService {
+  service: string;
+  from?: DeployedImage;
+  to: DeployedImage;
+  /** The image@digest it'll run; empty when it can't be pinned. */
+  pinned?: string;
+  changes: boolean;
+  /** Where the image comes from: on this host, or pulled from the registry. */
+  where?: "host" | "registry";
+  problem?: string;
+}
+
+export interface RollbackPlan {
+  target: DeployRecord;
+  services: RollbackService[];
+  /** The older compose file, when it differs from the current one. */
+  compose?: ComposeFile;
+  current?: ComposeFile;
+  notes: string[];
+  /** Why it can't be done. */
+  problem?: string;
+}
+
+/** A stack rolled back to an earlier deploy, its images pinned by digest. */
+export interface PinInfo {
+  deploy: string;
+  at: string;
+  commit?: string;
+  images: Record<string, string>;
+  /** Runs the older deploy's compose file, not the current one. */
+  old_compose?: boolean;
 }
 
 export interface StackInfo {
@@ -73,6 +147,8 @@ export interface StackInfo {
   last?: Job;
   /** Services the last update check found updates for. */
   updates: ServiceUpdate[];
+  /** Set while the stack is rolled back. */
+  pin?: PinInfo;
 }
 
 export interface ComposeFile {

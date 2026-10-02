@@ -53,6 +53,13 @@ func (s *Server) active(stack string) *jobs.Job {
 // startDeploy records a job and runs it in the background: in this process,
 // or, for Hoist's own stack, in a helper container that outlives it.
 func (s *Server) startDeploy(st config.Stack, services []string, trigger, commit string) (*jobs.Job, int, error) {
+	return s.launch(st, jobs.Job{Services: services, Trigger: trigger, Commit: commit})
+}
+
+// launch is startDeploy for a job described by j: its services, trigger,
+// commit and rollback target.
+func (s *Server) launch(st config.Stack, j jobs.Job) (*jobs.Job, int, error) {
+	services, commit := j.Services, j.Commit
 	s.mu.Lock()
 	if s.starting[st.Name] || s.active(st.Name) != nil {
 		s.mu.Unlock()
@@ -68,6 +75,8 @@ func (s *Server) startDeploy(st config.Stack, services []string, trigger, commit
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	// The deploy being replaced gets its last chance to count as good.
+	s.judge(ctx, st, true)
 	if len(services) > 0 {
 		known, err := s.services(ctx, st)
 		if err != nil {
@@ -94,14 +103,24 @@ func (s *Server) startDeploy(st config.Stack, services []string, trigger, commit
 		asleep = append(asleep, name)
 	}
 	slices.Sort(asleep)
-	job, err := s.Jobs.Create(jobs.Job{Stack: st.Name, Services: services, Trigger: trigger, Commit: commit, Dirty: dirty, Self: self, Asleep: asleep})
+	if st.Pin != nil && st.Pin.Base != "" {
+		// It runs the older compose file, not the one in the repo.
+		commit, dirty = st.Pin.Commit, false
+	}
+	job, err := s.Jobs.Create(jobs.Job{
+		Stack: st.Name, Services: services, Trigger: j.Trigger, Commit: commit, Dirty: dirty, Self: self,
+		Asleep: asleep, Rollback: j.Rollback, Pinned: st.Pin != nil,
+	})
 	if err != nil {
 		return nil, http.StatusInternalServerError, err
 	}
 	s.record(audit.Event{
-		Stack: st.Name, Services: services, Action: audit.Deploy, Trigger: trigger,
+		Stack: st.Name, Services: services, Action: audit.Deploy, Trigger: j.Trigger,
 		Commit: commit, Job: job.ID, Result: audit.Running,
 	})
+	s.mu.Lock()
+	delete(s.judged, st.Name) // there's a new deploy to judge once it ends
+	s.mu.Unlock()
 	if !self {
 		go func() {
 			if err := deploy.Run(context.Background(), s.Docker, s.Jobs, st, job); err != nil {

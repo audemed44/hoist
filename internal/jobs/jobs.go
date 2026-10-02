@@ -44,8 +44,34 @@ type Job struct {
 	// Asleep are the containers Gatehouse had put to sleep when the deploy
 	// started; ones the deploy only started are stopped again.
 	Asleep []string `json:"asleep,omitempty"`
-	Result *Result  `json:"result,omitempty"`
-	Error  string   `json:"error,omitempty"`
+	// Rollback is the earlier deploy this one went back to.
+	Rollback string `json:"rollback,omitempty"`
+	// Pinned is set when the stack ran with images pinned by digest (after
+	// a rollback), so the deploy didn't pull.
+	Pinned bool    `json:"pinned,omitempty"`
+	Result *Result `json:"result,omitempty"`
+	Error  string  `json:"error,omitempty"`
+	// Images is what the stack ran once the deploy ended.
+	Images []Image `json:"images,omitempty"`
+}
+
+// Image is what one container of a stack ran after a deploy.
+type Image struct {
+	Service   string `json:"service"`
+	Container string `json:"container"`
+	// ContainerID tells whether the container was replaced since.
+	ContainerID string `json:"container_id"`
+	// Ref is the image as compose was given it, e.g. ghcr.io/a/b:latest.
+	Ref     string `json:"ref"`
+	ImageID string `json:"image_id"`
+	// Digest is the registry digest for Ref's repository, which can pull
+	// exactly this image again; "" for images built locally.
+	Digest string `json:"digest,omitempty"`
+	// Source and Revision are the image's OCI labels: its repository and
+	// commit.
+	Source   string `json:"source,omitempty"`
+	Revision string `json:"revision,omitempty"`
+	State    string `json:"state"`
 }
 
 // Result is what the deploy changed, by service.
@@ -108,7 +134,9 @@ func (s *Store) jsonPath(id string) string { return filepath.Join(s.dir, id+".js
 // LogPath is where a job's output goes.
 func (s *Store) LogPath(id string) string { return filepath.Join(s.dir, id+".log") }
 
-func newID() string {
+// NewID makes a job ID: the UTC time and a random suffix, so IDs sort by
+// time.
+func NewID() string {
 	b := make([]byte, 3)
 	_, _ = rand.Read(b)
 	return time.Now().UTC().Format("20060102-150405") + "-" + hex.EncodeToString(b)
@@ -118,7 +146,7 @@ func newID() string {
 func (s *Store) Create(j Job) (*Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	j.ID = newID()
+	j.ID = NewID()
 	j.State = Running
 	j.Started = time.Now().UTC()
 	if err := s.write(&j); err != nil {

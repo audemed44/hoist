@@ -25,6 +25,9 @@ const (
 	UpdateApply = "update.apply"
 	StackAdopt  = "stack.adopt"
 	StackCreate = "stack.create"
+	// Rollback pins a stack to an earlier deploy; RollbackResume unpins it.
+	Rollback       = "rollback.pin"
+	RollbackResume = "rollback.resume"
 )
 
 // Results.
@@ -88,7 +91,7 @@ func Open(path string) (*Log, error) {
 	// day, and an open SQLite connection holds its page cache.
 	db.SetMaxOpenConns(1)
 	db.SetConnMaxIdleTime(time.Minute)
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + deploysSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("audit database: %w", err)
 	}
@@ -120,12 +123,14 @@ func (l *Log) Record(ctx context.Context, e Event) (int64, error) {
 	return id, err
 }
 
-// FinishJob records how a deploy ended on the event that started it.
+// FinishJob records how a deploy ended on the events that started it (the
+// deploy, and a rollback or update that led to it). Only the deploy's
+// detail becomes the job's summary; the others keep theirs.
 func (l *Log) FinishJob(ctx context.Context, job, result, detail, errMsg string) error {
 	_, err := l.db.ExecContext(ctx,
-		`UPDATE events SET result = ?, detail = CASE WHEN ? = '' THEN detail ELSE ? END, error = ?
+		`UPDATE events SET result = ?, detail = CASE WHEN ? = '' OR action != ? THEN detail ELSE ? END, error = ?
 		 WHERE job = ? AND result = ?`,
-		result, detail, detail, errMsg, job, Running)
+		result, detail, Deploy, detail, errMsg, job, Running)
 	return err
 }
 

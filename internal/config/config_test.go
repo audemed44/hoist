@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func write(t *testing.T, path, content string) {
@@ -222,5 +223,54 @@ func TestAddStackLayouts(t *testing.T) {
 				t.Errorf("got\n%s\nwant\n%s", data, tc.want)
 			}
 		})
+	}
+}
+
+func TestPins(t *testing.T) {
+	dir := t.TempDir()
+	stack := filepath.Join(dir, "main")
+	write(t, filepath.Join(stack, "compose.yml"), "services: {}\n")
+	path := filepath.Join(dir, "hoist.yaml")
+	write(t, path, "stacks:\n  - name: main\n    path: "+stack+"\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Rollback.Healthy() != 5*time.Minute || cfg.Rollback.Keep != 2 {
+		t.Errorf("rollback defaults = %+v", cfg.Rollback)
+	}
+	st, _ := cfg.Stack("main")
+	if f := st.Files(); len(f) != 1 || f[0] != filepath.Join(stack, "compose.yml") {
+		t.Errorf("files = %v", f)
+	}
+	pinDir := filepath.Join(cfg.PinDir("main"), "job1")
+	write(t, filepath.Join(pinDir, "override.yml"), "services: {}\n")
+	write(t, filepath.Join(cfg.PinDir("main"), "job0", "override.yml"), "services: {}\n")
+	pin := &Pin{Deploy: "job1", Override: filepath.Join(pinDir, "override.yml"), Base: filepath.Join(pinDir, "compose.yml")}
+	if err := cfg.SetPin("main", pin); err != nil {
+		t.Fatal(err)
+	}
+	cfg.PrunePins("main")
+	if _, err := os.Stat(filepath.Join(cfg.PinDir("main"), "job0")); !os.IsNotExist(err) {
+		t.Error("an old pin's files were kept")
+	}
+	// A restarted Hoist (or the helper) sees the pin.
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, _ = again.Stack("main")
+	if st.Pin == nil || st.Pin.Deploy != "job1" {
+		t.Fatalf("pin = %+v", st.Pin)
+	}
+	if f := st.Files(); len(f) != 2 || f[0] != pin.Base || f[1] != pin.Override {
+		t.Errorf("pinned files = %v", f)
+	}
+	if err := again.SetPin("main", nil); err != nil {
+		t.Fatal(err)
+	}
+	again.PrunePins("main")
+	if _, err := os.Stat(again.PinDir("main")); !os.IsNotExist(err) {
+		t.Error("pin folder left behind")
 	}
 }

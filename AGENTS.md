@@ -11,7 +11,10 @@ file and `.env`, commit and push, pull and deploy. A Go server
 frontend (`frontend/`), built into `web/dist` and embedded in the binary.
 Config is `/config/hoist.yaml`; deploy records and logs are files in
 `/config/jobs/`; the audit log is SQLite in `/config/hoist.db`
-(`internal/audit`), written by both Hoist and its self-deploy helper.
+(`internal/audit`), written by both Hoist and its self-deploy helper. The
+same database keeps what each deploy ran (`deploys` table) for rollbacks;
+a rolled-back stack is pinned by an override in `/config/pins/<stack>/`
+(`config.Pin`), which every compose call for it includes (`Stack.Files`).
 
 ## Constraints
 

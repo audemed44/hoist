@@ -3,6 +3,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -46,6 +47,39 @@ type Stack struct {
 	RemoveOrphans *bool `yaml:"remove_orphans,omitempty" json:"remove_orphans"`
 	// Updates overrides the automatic update policy.
 	Updates *StackUpdates `yaml:"updates,omitempty" json:"updates,omitempty"`
+	// Pin is set while the stack is rolled back to an earlier deploy.
+	Pin *Pin `yaml:"-" json:"-"`
+}
+
+// Pin is a stack rolled back to an earlier deploy. Compose runs with an
+// override that pins every image by digest, so a deploy doesn't drift back
+// to :latest, and, when that deploy used an older compose file, with a copy
+// of that file instead of the stack's. Both live in the config folder, not
+// in the stack's repo.
+type Pin struct {
+	// Deploy is the job rolled back to.
+	Deploy string    `json:"deploy"`
+	At     time.Time `json:"at"`
+	// Commit is the compose file's commit that deploy used.
+	Commit string `json:"commit,omitempty"`
+	// Base is the copy of the older compose file; "" uses the stack's.
+	Base     string `json:"base,omitempty"`
+	Override string `json:"override"`
+	// Images are the pinned references, by service.
+	Images map[string]string `json:"images"`
+}
+
+// Files are the compose files a deploy uses: the stack's, or while it's
+// pinned, the base and the override.
+func (s Stack) Files() []string {
+	if s.Pin == nil {
+		return []string{s.ComposePath()}
+	}
+	base := s.ComposePath()
+	if s.Pin.Base != "" {
+		base = s.Pin.Base
+	}
+	return []string{base, s.Pin.Override}
 }
 
 func (s Stack) ShouldRemoveOrphans() bool { return s.RemoveOrphans == nil || *s.RemoveOrphans }
@@ -81,11 +115,29 @@ type StackUpdates struct {
 	Services map[string]string `yaml:"services,omitempty" json:"services"`
 }
 
+// Rollback configures what counts as a good deploy to roll back to.
+type Rollback struct {
+	// HealthyFor is how long a deploy's containers must run, without
+	// restarting or failing a healthcheck, for it to count as good.
+	// Default 5m.
+	HealthyFor string `yaml:"healthy_for,omitempty" json:"healthy_for"`
+	// Keep is how many good deploys per stack keep their images on the
+	// host (tagged hoist-keep/<stack>), so a prune can't remove them.
+	// Default 2.
+	Keep int `yaml:"keep,omitempty" json:"keep"`
+
+	healthyFor time.Duration
+}
+
+// Healthy is HealthyFor as a duration.
+func (r Rollback) Healthy() time.Duration { return r.healthyFor }
+
 var policies = map[string]bool{"off": true, "digest": true, "patch": true, "minor": true}
 
 type Config struct {
-	Git     Git     `yaml:"git" json:"git"`
-	Updates Updates `yaml:"updates" json:"updates"`
+	Git      Git      `yaml:"git" json:"git"`
+	Updates  Updates  `yaml:"updates" json:"updates"`
+	Rollback Rollback `yaml:"rollback" json:"rollback"`
 	// Stacks is read through List and Stack once the server runs, since
 	// AddStack can change it.
 	Stacks []Stack `yaml:"stacks" json:"stacks"`
@@ -152,7 +204,58 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	cfg.path = path
+	cfg.loadPins()
 	return &cfg, nil
+}
+
+// PinDir is where a stack's pin files go.
+func (c *Config) PinDir(stack string) string {
+	return filepath.Join(filepath.Dir(c.path), "pins", stack)
+}
+
+func (c *Config) loadPins() {
+	for i := range c.Stacks {
+		data, err := os.ReadFile(filepath.Join(c.PinDir(c.Stacks[i].Name), "pin.json"))
+		if err != nil {
+			continue
+		}
+		var p Pin
+		if json.Unmarshal(data, &p) == nil && p.Override != "" {
+			c.Stacks[i].Pin = &p
+		}
+	}
+}
+
+// SetPin pins a stack, or unpins it (nil). The pin is saved, so the
+// self-deploy helper and a restarted Hoist see it. The files it points to
+// are the caller's; PrunePins removes the ones no longer used.
+func (c *Config) SetPin(stack string, p *Pin) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	i := slices.IndexFunc(c.Stacks, func(s Stack) bool { return s.Name == stack })
+	if i < 0 {
+		return fmt.Errorf("no stack %q", stack)
+	}
+	dir := c.PinDir(stack)
+	if p == nil {
+		c.Stacks[i].Pin = nil
+		if err := os.Remove(filepath.Join(dir, "pin.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := writeAtomic(filepath.Join(dir, "pin.json"), data, 0o644); err != nil {
+		return err
+	}
+	c.Stacks[i].Pin = p
+	return nil
 }
 
 func (c *Config) normalise() error {
@@ -182,6 +285,20 @@ func (c *Config) normalise() error {
 	}
 	if !policies[c.Updates.Auto] {
 		return fmt.Errorf("updates.auto: %q should be off, digest, patch or minor", c.Updates.Auto)
+	}
+	c.Rollback.healthyFor = 5 * time.Minute
+	if h := c.Rollback.HealthyFor; h != "" {
+		d, err := time.ParseDuration(h)
+		if err != nil || d < 0 {
+			return fmt.Errorf("rollback.healthy_for: %q should be like 5m", h)
+		}
+		c.Rollback.healthyFor = d
+	}
+	if c.Rollback.Keep == 0 {
+		c.Rollback.Keep = 2
+	}
+	if c.Rollback.Keep < 0 {
+		return errors.New("rollback.keep can't be negative")
 	}
 	seen := map[string]bool{}
 	for i := range c.Stacks {
@@ -391,4 +508,24 @@ func findComposeFile(dir string) string {
 		}
 	}
 	return ""
+}
+
+// PrunePins removes a stack's pin files other than its current pin's.
+func (c *Config) PrunePins(stack string) {
+	st, ok := c.Stack(stack)
+	if !ok {
+		return
+	}
+	dir := c.PinDir(stack)
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		path := filepath.Join(dir, e.Name())
+		if e.Name() == "pin.json" || (st.Pin != nil && strings.HasPrefix(st.Pin.Override, path+string(filepath.Separator))) {
+			continue
+		}
+		os.RemoveAll(path)
+	}
+	if st.Pin == nil {
+		os.Remove(dir)
+	}
 }

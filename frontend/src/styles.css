@@ -1294,3 +1294,43 @@ button.chip {
     order: -1;
   }
 }
+
+/* ── Rollback ──────────────────────────────────────────────────────────── */
+
+.pin-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+.pin-banner > svg {
+  color: var(--warn);
+  flex: none;
+}
+.pin-banner > span:not(.spacer):not(.pin-confirm) {
+  flex: 1 1 320px;
+}
+.pin-confirm {
+  display: flex;
+  gap: 8px;
+}
+.rollback-plan .chip {
+  min-width: 84px;
+}
+.rollback-svc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.deploy-row {
+  flex-wrap: wrap;
+}
+.deploy-row > a {
+  min-width: 0;
+  flex: 1 1 260px;
+}
+.deploy-row .list-main {
+  overflow-wrap: anywhere;
+}
