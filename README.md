@@ -36,6 +36,12 @@ that idles at about 4 MB of RAM. A lightweight replacement for
   pulling, whether a tag now points to a newer image and whether a pinned
   version has newer releases. Apply one with a click (the tag bump is
   committed like any edit), or let a policy apply them for you.
+- **Rollback**: every deploy records what each container ran (image,
+  registry digest, and the commit from its OCI labels). Once a deploy has
+  run for a while without restarts or failing healthchecks it counts as
+  good. **Roll back** redeploys the last good deploy before the current
+  one, or any earlier one, with every image pinned by digest, so `:latest`
+  can't drift back, until you **Resume :latest**.
 - **Self-update**: Hoist can deploy its own stack. A short-lived helper
   container runs that deploy, so it finishes while Hoist is replaced.
 - **Add stacks**: adopt a compose project already running on the server
@@ -126,6 +132,39 @@ stacks:
   file on one line; a tag set through `${VAR}` is reported but left alone.
 - With `notify` set, Hoist posts each automatic update's result, and any
   failure, to Apprise.
+
+### Rollback
+
+```yaml
+rollback:
+  healthy_for: 5m   # how long a deploy must run without trouble to count as good
+  keep: 2           # good deploys per stack whose images are kept on the host
+```
+
+- Each deploy records, per container, the image reference, its registry
+  digest and the image's `org.opencontainers.image.revision` and `source`
+  labels. The first time Hoist sees a stack it records what's running as a
+  baseline, so the first deploy through Hoist can be undone too.
+- A deploy is **good** once its containers have run for `healthy_for`:
+  still the same containers, running, not unhealthy, not restarted.
+  Containers Gatehouse put to sleep don't count against it.
+- **Roll back** (on the stack, or *Deploy this version again* on any good
+  deploy in its Deploys tab) shows a plan: which services change, from and
+  to which commit or digest, and whether each image is still on the host or
+  in the registry; targets whose images are gone are refused. When that
+  deploy used an older compose file, the plan shows the difference and the
+  rollback uses that version.
+- The rollback writes an override that sets each service's
+  `image: repo@sha256:…` (and a copy of the older compose file, if one is
+  used) to `/config/pins/<stack>/`; the stack's repo isn't touched. While a
+  stack is pinned, deploys keep the pin and don't pull, update checks skip
+  it, and Foyer's card says it's rolled back. **Resume :latest** drops the
+  pin and deploys the compose file as it is.
+- Registries may delete old versions (GHCR cleanup jobs often keep only a
+  few), so the images of the last `keep` good deploys of each stack are
+  tagged `hoist-keep/<stack>:<deploy>-<service>`; `docker image prune`
+  leaves tagged images alone. Older tags are removed as new deploys prove
+  good.
 
 ### Pushing with a deploy key
 

@@ -4,6 +4,7 @@ import {
   GitCommitHorizontal,
   RefreshCw,
   Rocket,
+  Undo2,
 } from "lucide-preact";
 import { useState } from "preact/hooks";
 import { api } from "../api";
@@ -16,6 +17,7 @@ import { DeployDialog } from "./DeployDialog";
 import { DriftDialog } from "./Drift";
 import { EnvTab } from "./EnvTab";
 import { DeploysTab, HistoryTab } from "./HistoryTabs";
+import { PinBanner, RollbackDialog } from "./Rollback";
 import { ServicesTab } from "./ServicesTab";
 import { ErrorNote } from "./ui";
 
@@ -30,6 +32,7 @@ const TAB_LABEL: Record<Tab, string> = {
 export function StackPage(props: { name: string; tab: Tab; readOnly: boolean }) {
   const { data: stack, error, reload } = useData(() => api.stack(props.name), 8000, [props.name]);
   const [deploy, setDeploy] = useState<{ service?: string } | null>(null);
+  const [rollback, setRollback] = useState(false);
 
   if (!stack) {
     return error ? <ErrorNote>{error}</ErrorNote> : <div class="skeleton page-skeleton" />;
@@ -69,6 +72,16 @@ export function StackPage(props: { name: string; tab: Tab; readOnly: boolean }) 
           <span class="spacer" />
           {!props.readOnly && (
             <button
+              class="btn btn-big"
+              disabled={!!stack.active}
+              onClick={() => setRollback(true)}
+              title="Go back to the last good deploy"
+            >
+              <Undo2 size={16} /> Roll back
+            </button>
+          )}
+          {!props.readOnly && (
+            <button
               class="btn btn-primary btn-big"
               disabled={!!stack.active || !!stack.error}
               onClick={() => setDeploy({})}
@@ -78,6 +91,14 @@ export function StackPage(props: { name: string; tab: Tab; readOnly: boolean }) 
           )}
         </div>
         <GitBar stack={stack} readOnly={props.readOnly} onChange={reload} label={git} />
+        {stack.pin && (
+          <PinBanner
+            stack={stack.name}
+            pin={stack.pin}
+            busy={!!stack.active}
+            readOnly={props.readOnly}
+          />
+        )}
         {stack.active && (
           <a class="note note-accent" href={`/jobs/${stack.active.id}`}>
             Deploying since {ago(stack.active.started)}. Follow the log →
@@ -118,8 +139,17 @@ export function StackPage(props: { name: string; tab: Tab; readOnly: boolean }) 
       )}
       {props.tab === "env" && <EnvTab stack={stack} readOnly={props.readOnly} />}
       {props.tab === "history" && <HistoryTab stack={stack} readOnly={props.readOnly} />}
-      {props.tab === "deploys" && <DeploysTab stack={stack} />}
+      {props.tab === "deploys" && <DeploysTab stack={stack} readOnly={props.readOnly} />}
 
+      {rollback && (
+        <RollbackDialog
+          stack={stack.name}
+          onClose={() => {
+            setRollback(false);
+            reload();
+          }}
+        />
+      )}
       {deploy && (
         <DeployDialog
           stack={stack}

@@ -47,7 +47,10 @@ esac
 `
 
 type env struct {
-	t       *testing.T
+	t *testing.T
+	// docker, when set, answers fake Docker requests first; it returns
+	// false to leave one to the default handler.
+	docker  *func(w http.ResponseWriter, r *http.Request) bool
 	srv     *Server
 	h       http.Handler
 	stack   config.Stack
@@ -97,7 +100,11 @@ func newEnv(t *testing.T, readOnly bool) *env {
 	}
 	_ = os.MkdirAll(filepath.Join(root, "romm"), 0o755)
 	_ = os.WriteFile(filepath.Join(root, "romm", "compose.yml"), []byte("services:\n  romm:\n    image: romm\n"), 0o644)
+	hook := new(func(w http.ResponseWriter, r *http.Request) bool)
 	dockerSrv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if *hook != nil && (*hook)(w, r) {
+			return
+		}
 		if r.URL.Path != "/containers/json" {
 			http.NotFound(w, r)
 			return
@@ -152,7 +159,7 @@ func newEnv(t *testing.T, readOnly bool) *env {
 		Config: cfg, Docker: docker.New(sock), Jobs: store, Audit: auditLog, Token: token, ReadOnly: readOnly,
 		Web: fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}},
 	})
-	return &env{t: t, srv: srv, h: srv.Handler(), stack: cfg.Stacks[0], root: root, cfgPath: cfgPath}
+	return &env{t: t, docker: hook, srv: srv, h: srv.Handler(), stack: cfg.Stacks[0], root: root, cfgPath: cfgPath}
 }
 
 func (e *env) do(method, path, body string, headers ...string) *httptest.ResponseRecorder {

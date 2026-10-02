@@ -45,7 +45,7 @@ func fileKey(paths ...string) string {
 }
 
 func (s *Server) services(ctx context.Context, st config.Stack) ([]compose.Service, error) {
-	key := fileKey(st.ComposePath(), st.EnvPath())
+	key := fileKey(append(st.Files(), st.EnvPath())...)
 	s.mu.Lock()
 	c, ok := s.plans[st.Name]
 	s.mu.Unlock()
@@ -83,10 +83,12 @@ type StackInfo struct {
 	Last     *jobs.Job       `json:"last,omitempty"`
 	// Updates are the services the last update check found updates for.
 	Updates []updates.Service `json:"updates"`
+	// Pin is set while the stack is rolled back to an earlier deploy.
+	Pin *pinInfo `json:"pin,omitempty"`
 }
 
 func (s *Server) stackInfo(ctx context.Context, st config.Stack, fetch bool) StackInfo {
-	info := StackInfo{Name: st.Name, Path: st.Path, File: st.File, Project: st.Project, Self: s.isSelf(st)}
+	info := StackInfo{Name: st.Name, Path: st.Path, File: st.File, Project: st.Project, Self: s.isSelf(st), Pin: newPinInfo(st.Pin)}
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -149,6 +151,7 @@ func (s *Server) stackInfo(ctx context.Context, st config.Stack, fetch bool) Sta
 	info.Counts.Updates = len(info.Updates)
 	info.Active = s.active(st.Name)
 	info.Last = s.Jobs.Latest(st.Name)
+	s.judge(ctx, st, false)
 	wg.Wait()
 	return info
 }

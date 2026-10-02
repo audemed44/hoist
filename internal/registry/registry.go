@@ -36,6 +36,48 @@ func (r Ref) Name() string {
 
 const dockerHub = "registry-1.docker.io"
 
+// DigestFor finds ref's registry digest among an image's RepoDigests. A
+// container whose tag has since moved on shows its image ID as ref; the
+// image's own first repository is used then. It returns the reference to
+// record (ref, or that repository) and the digest, "" for images built
+// locally.
+func DigestFor(ref string, repoDigests []string) (string, string) {
+	if strings.HasPrefix(ref, "sha256:") {
+		if len(repoDigests) == 0 {
+			return ref, ""
+		}
+		name, d, _ := strings.Cut(repoDigests[0], "@")
+		return name, d
+	}
+	r, err := Parse(ref)
+	if err != nil {
+		return ref, ""
+	}
+	if r.Digest != "" {
+		return ref, r.Digest
+	}
+	for _, rd := range repoDigests {
+		name, d, ok := strings.Cut(rd, "@")
+		if ok && (name == r.Name() || strings.TrimPrefix(name, "docker.io/") == r.Name()) {
+			return ref, d
+		}
+	}
+	return ref, ""
+}
+
+// Pinned is ref pinned to digest: repository@digest, without the tag.
+func Pinned(ref, digest string) string {
+	r, err := Parse(ref)
+	if err != nil {
+		return ref
+	}
+	name := r.Registry + "/" + r.Repo
+	if r.Registry == dockerHub {
+		name = r.Name()
+	}
+	return name + "@" + digest
+}
+
 // Parse splits an image reference the way docker does.
 func Parse(ref string) (Ref, error) {
 	var r Ref
@@ -83,7 +125,12 @@ type token struct {
 }
 
 func New() *Client {
-	return &Client{http: &http.Client{Timeout: 20 * time.Second}, tokens: map[string]token{}}
+	return NewWith(&http.Client{Timeout: 20 * time.Second})
+}
+
+// NewWith is New with another HTTP client, e.g. a test's.
+func NewWith(h *http.Client) *Client {
+	return &Client{http: h, tokens: map[string]token{}}
 }
 
 // ErrNotFound means the registry has no such repository or tag.
@@ -109,6 +156,21 @@ func (c *Client) Digest(ctx context.Context, r Ref) (string, error) {
 		return "", errors.New("the registry didn't say the digest")
 	}
 	return d, nil
+}
+
+// HasManifest checks that the registry still has the image r names, by
+// digest when it has one; ErrNotFound when it doesn't.
+func (c *Client) HasManifest(ctx context.Context, r Ref) error {
+	ref := r.Tag
+	if r.Digest != "" {
+		ref = r.Digest
+	}
+	resp, err := c.do(ctx, r, http.MethodHead, "/manifests/"+ref, manifestTypes)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
 }
 
 // maxTagPages bounds the tag list (100 tags a page on Docker Hub).

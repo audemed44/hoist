@@ -6,12 +6,14 @@ import type {
   Commit,
   ComposeFile,
   Discovery,
+  DeployRecord,
   DriftInfo,
   ServiceSuggestion,
   EnvChange,
   EnvInfo,
   GitStatus,
   Job,
+  RollbackPlan,
   SaveResult,
   Session,
   StackInfo,
@@ -112,6 +114,15 @@ export const api = {
 
   deploy: (name: string, services?: string[]) =>
     request<Job>(`${stack(name)}/deploy`, json("POST", { services: services ?? [] })),
+  /** Finished deploys and what they ran, newest first. */
+  deploys: (name: string) => request<DeployRecord[]>(`${stack(name)}/deploys`),
+  /** A rollback to the deploy `to`, or by default to the last good one before the current. */
+  rollbackPlan: (name: string, to?: string) =>
+    request<RollbackPlan>(`${stack(name)}/rollback${to ? `?to=${encodeURIComponent(to)}` : ""}`),
+  rollback: (name: string, to: string) =>
+    request<Job>(`${stack(name)}/rollback`, json("POST", { to })),
+  /** Unpins a rolled-back stack and deploys its compose file's images again. */
+  resume: (name: string) => request<Job>(`${stack(name)}/resume`, { method: "POST" }),
   updates: () => request<UpdatesInfo>("/api/updates"),
   checkUpdates: () => request<void>("/api/updates/check", { method: "POST" }),
   /** Bumps a service to tag (commit and deploy), or without a tag pulls its new image. */

@@ -9,6 +9,9 @@ import {
   shortDuration,
   stackName,
   updateText,
+  imageVersion,
+  jobTime,
+  shortDigest,
 } from "./lib";
 import { href, parseRoute } from "./router";
 import type { GitStatus } from "./types";
@@ -156,5 +159,17 @@ describe("insertService", () => {
     expect(insertService("", { ...svc, ports: [], volumes: [] })).toBe(
       "services:\n  romm:\n    image: ghcr.io/rommapp/romm:5.3.1\n    restart: unless-stopped\n",
     );
+  });
+});
+
+describe("deploy versions", () => {
+  it("reads a job's start time from its ID", () => {
+    expect(jobTime("20261002-150405-abcdef")).toBe("2026-10-02T15:04:05Z");
+    expect(jobTime("nope")).toBe("");
+  });
+  it("shows a commit when there is one, else a short digest", () => {
+    expect(imageVersion({ revision: "72c8c1cbe506c2a6", digest: "sha256:aaa" })).toBe("72c8c1c");
+    expect(imageVersion({ digest: "sha256:0123456789abcdef" })).toBe("0123456789ab");
+    expect(shortDigest(undefined)).toBe("");
   });
 });

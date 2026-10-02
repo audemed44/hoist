@@ -25,10 +25,14 @@ import (
 // docker CLI.
 var Bin = "docker-compose"
 
-// baseArgs pins the project, file and folder, so the result matches what
+// baseArgs pins the project, files and folder, so the result matches what
 // was deployed before (and the containers' labels).
-func baseArgs(s config.Stack, file string) []string {
-	return []string{"--project-name", s.Project, "--file", file, "--project-directory", s.Path, "--ansi", "never"}
+func baseArgs(s config.Stack, files []string) []string {
+	args := []string{"--project-name", s.Project}
+	for _, f := range files {
+		args = append(args, "--file", f)
+	}
+	return append(args, "--project-directory", s.Path, "--ansi", "never")
 }
 
 // environ is what compose sees besides .env. Compose lets these override
@@ -50,15 +54,15 @@ func environ() []string {
 	return env
 }
 
-func command(ctx context.Context, s config.Stack, file string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, Bin, append(baseArgs(s, file), args...)...)
+func command(ctx context.Context, s config.Stack, files []string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, Bin, append(baseArgs(s, files), args...)...)
 	cmd.Dir = s.Path
 	cmd.Env = environ()
 	return cmd
 }
 
-func output(ctx context.Context, s config.Stack, file string, args ...string) ([]byte, error) {
-	cmd := command(ctx, s, file, args...)
+func output(ctx context.Context, s config.Stack, files []string, args ...string) ([]byte, error) {
+	cmd := command(ctx, s, files, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
@@ -71,9 +75,10 @@ func output(ctx context.Context, s config.Stack, file string, args ...string) ([
 	return stdout.Bytes(), nil
 }
 
-// Run runs a compose command for the stack, streaming its output to w.
+// Run runs a compose command for the stack (with its pin, if it has one),
+// streaming its output to w.
 func Run(ctx context.Context, s config.Stack, w io.Writer, args ...string) error {
-	cmd := command(ctx, s, s.ComposePath(), append([]string{"--progress", "plain"}, args...)...)
+	cmd := command(ctx, s, s.Files(), append([]string{"--progress", "plain"}, args...)...)
 	cmd.Stdout, cmd.Stderr = w, w
 	return cmd.Run()
 }
@@ -110,7 +115,7 @@ func withTemp(ctx context.Context, s config.Stack, content []byte, args ...strin
 	if err := tmp.Close(); err != nil {
 		return nil, err
 	}
-	out, err := output(ctx, s, tmp.Name(), args...)
+	out, err := output(ctx, s, []string{tmp.Name()}, args...)
 	if err != nil {
 		return nil, cleanError(err, tmp.Name(), s.File)
 	}
@@ -223,10 +228,11 @@ func parseServices(data []byte) ([]Service, error) {
 	return out, nil
 }
 
-// Services resolves the compose file: every service, its image, its ports,
-// and the config hash compose would label a fresh container with.
+// Services resolves the compose file (with the stack's pin, if it has one):
+// every service, its image, its ports, and the config hash compose would
+// label a fresh container with.
 func Services(ctx context.Context, s config.Stack) ([]Service, error) {
-	data, err := output(ctx, s, s.ComposePath(), "config", "--format", "json")
+	data, err := output(ctx, s, s.Files(), "config", "--format", "json")
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +240,7 @@ func Services(ctx context.Context, s config.Stack) ([]Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	hashes, err := output(ctx, s, s.ComposePath(), "config", "--hash", "*")
+	hashes, err := output(ctx, s, s.Files(), "config", "--hash", "*")
 	if err != nil {
 		return nil, err
 	}

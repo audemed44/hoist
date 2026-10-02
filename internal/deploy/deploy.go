@@ -16,6 +16,7 @@ import (
 	"github.com/audemed44/hoist/internal/config"
 	"github.com/audemed44/hoist/internal/docker"
 	"github.com/audemed44/hoist/internal/jobs"
+	"github.com/audemed44/hoist/internal/registry"
 )
 
 // Timeout bounds a whole deploy; pulls of big images can be slow.
@@ -32,7 +33,10 @@ func Run(ctx context.Context, dock *docker.Client, store *jobs.Store, stack conf
 		return err
 	}
 	defer log.Close()
-	res, err := run(ctx, dock, stack, j.Services, j.Asleep, log)
+	res, err := run(ctx, dock, stack, j, log)
+	snap, cancelSnap := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	j.Images = Snapshot(snap, dock, stack.Project)
+	cancelSnap()
 	if err != nil {
 		fmt.Fprintf(log, "\n✗ %v\n", err)
 	} else {
@@ -44,15 +48,23 @@ func Run(ctx context.Context, dock *docker.Client, store *jobs.Store, stack conf
 	return err
 }
 
-func run(ctx context.Context, dock *docker.Client, stack config.Stack, services, asleep []string, log io.Writer) (*jobs.Result, error) {
+func run(ctx context.Context, dock *docker.Client, stack config.Stack, j *jobs.Job, log io.Writer) (*jobs.Result, error) {
+	services, asleep := j.Services, j.Asleep
 	before, err := dock.Project(ctx, stack.Project)
 	if err != nil {
 		return nil, fmt.Errorf("list containers: %w", err)
 	}
-	pull := append([]string{"pull", "--ignore-buildable"}, services...)
-	fmt.Fprintf(log, "$ docker compose %s\n", join(pull))
-	if err := compose.Run(ctx, stack, log, pull...); err != nil {
-		return nil, fmt.Errorf("pull failed: %w", err)
+	if j.Pinned {
+		// The images are pinned by digest, so there's nothing newer to
+		// pull, and the registry may no longer have them: up pulls only
+		// what isn't on the host.
+		fmt.Fprintf(log, "# %s is pinned to the images of an earlier deploy; not pulling.\n", stack.Name)
+	} else {
+		pull := append([]string{"pull", "--ignore-buildable"}, services...)
+		fmt.Fprintf(log, "$ docker compose %s\n", join(pull))
+		if err := compose.Run(ctx, stack, log, pull...); err != nil {
+			return nil, fmt.Errorf("pull failed: %w", err)
+		}
 	}
 	up := []string{"up", "--detach"}
 	if stack.ShouldRemoveOrphans() {
@@ -93,6 +105,43 @@ func backToSleep(res *jobs.Result, before []docker.Container, asleep []string) [
 		}
 	}
 	sort.Strings(out)
+	return out
+}
+
+// Snapshot records what each of a project's containers runs: the image
+// reference, its registry digest and its OCI source and revision labels.
+func Snapshot(ctx context.Context, dock *docker.Client, project string) []jobs.Image {
+	containers, err := dock.Project(ctx, project)
+	if err != nil {
+		return nil
+	}
+	images := map[string]*docker.Image{}
+	out := []jobs.Image{}
+	for _, c := range containers {
+		if c.OneOff {
+			continue
+		}
+		img := jobs.Image{
+			Service: c.Service, Container: c.Name, ContainerID: c.ID,
+			Ref: c.Image, ImageID: c.ImageID, State: c.State,
+			Source: c.Source, Revision: c.Revision,
+		}
+		info, ok := images[c.ImageID]
+		if !ok {
+			info, _ = dock.Image(ctx, c.ImageID)
+			images[c.ImageID] = info
+		}
+		if info != nil {
+			img.Ref, img.Digest = registry.DigestFor(c.Image, info.RepoDigests)
+			if img.Source == "" {
+				img.Source = info.Labels[docker.LabelSource]
+			}
+			if img.Revision == "" {
+				img.Revision = info.Labels[docker.LabelRevision]
+			}
+		}
+		out = append(out, img)
+	}
 	return out
 }
 

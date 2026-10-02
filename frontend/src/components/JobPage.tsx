@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../api";
-import { ago, duration, jobSummary } from "../lib";
+import { ago, duration, jobSummary, jobTime, when } from "../lib";
 import type { Job } from "../types";
 import { Dot, ErrorNote } from "./ui";
 
@@ -104,6 +104,15 @@ export function JobPage(props: { id: string }) {
             </span>
           )}
           {job.self && <span>ran in a helper container</span>}
+          {job.rollback && (
+            <span>
+              rolled back to{" "}
+              <a class="link" href={`/jobs/${job.rollback}`}>
+                {when(jobTime(job.rollback))}
+              </a>
+            </span>
+          )}
+          {job.pinned && !job.rollback && <span>images pinned by digest</span>}
         </div>
         {job.result && job.result.updated.length > 0 && (
           <p class="muted">New images: {job.result.updated.join(", ")}</p>

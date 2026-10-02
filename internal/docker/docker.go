@@ -99,6 +99,10 @@ type Container struct {
 	Project string `json:"-"`
 	// Ports are the host ports a running container publishes.
 	Ports []Port `json:"-"`
+	// Source and Revision are the image's OCI labels (which containers
+	// inherit): the repository it was built from, and the commit.
+	Source   string `json:"-"`
+	Revision string `json:"-"`
 }
 
 type Port struct {
@@ -157,6 +161,7 @@ func (c *Client) containers(ctx context.Context, q url.Values) ([]Container, err
 			State: it.State, Status: it.Status, Created: it.Created,
 			ConfigHash: it.Labels[labelHash], OneOff: it.Labels[labelOneOff] == "True",
 			Project: it.Labels[labelProject],
+			Source:  it.Labels[LabelSource], Revision: it.Labels[LabelRevision],
 		}
 		for _, p := range it.Ports {
 			if p.PublicPort == 0 {
@@ -369,4 +374,96 @@ func (c *Client) RepoDigests(ctx context.Context, image string) ([]string, error
 		return nil, err
 	}
 	return info.RepoDigests, nil
+}
+
+// OCI labels an image may carry about where it was built from.
+const (
+	LabelSource   = "org.opencontainers.image.source"
+	LabelRevision = "org.opencontainers.image.revision"
+)
+
+// Image is a local image as a deploy record needs it.
+type Image struct {
+	ID string
+	// RepoDigests are the registry digests ("repo@sha256:…") docker
+	// recorded when it pulled the image; none for locally built ones.
+	RepoDigests []string
+	Labels      map[string]string
+}
+
+// Image inspects a local image by ID or reference; ErrNotFound means it
+// isn't on this host.
+func (c *Client) Image(ctx context.Context, ref string) (*Image, error) {
+	var info struct {
+		ID          string `json:"Id"`
+		RepoDigests []string
+		Config      struct{ Labels map[string]string }
+	}
+	if err := c.do(ctx, http.MethodGet, "/images/"+url.PathEscape(ref)+"/json", nil, nil, &info); err != nil {
+		return nil, err
+	}
+	return &Image{ID: info.ID, RepoDigests: info.RepoDigests, Labels: info.Config.Labels}, nil
+}
+
+// Tag adds repo:tag to a local image.
+func (c *Client) Tag(ctx context.Context, image, repo, tag string) error {
+	q := url.Values{"repo": {repo}, "tag": {tag}}
+	return c.do(ctx, http.MethodPost, "/images/"+url.PathEscape(image)+"/tag", q, nil, nil)
+}
+
+// Untag removes a repo:tag. The image itself goes too when nothing else
+// refers to it, as with `docker rmi`; one a container uses stays.
+func (c *Client) Untag(ctx context.Context, ref string) error {
+	err := c.do(ctx, http.MethodDelete, "/images/"+url.PathEscape(ref), url.Values{"force": {"1"}}, nil, nil)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
+// Tagged lists the local image tags under repo, e.g. hoist-keep/main-stack.
+func (c *Client) Tagged(ctx context.Context, repo string) ([]string, error) {
+	filters, _ := json.Marshal(map[string][]string{"reference": {repo}})
+	var items []struct{ RepoTags []string }
+	if err := c.do(ctx, http.MethodGet, "/images/json", url.Values{"filters": {string(filters)}}, nil, &items); err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, it := range items {
+		for _, t := range it.RepoTags {
+			if strings.HasPrefix(t, repo+":") {
+				out = append(out, t)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// Health is a container's state, as far as judging a deploy goes.
+type Health struct {
+	Running bool
+	// Status is the healthcheck's: healthy, unhealthy, starting, or ""
+	// without one.
+	Status    string
+	StartedAt time.Time
+}
+
+// Health inspects a container; ErrNotFound when it's gone.
+func (c *Client) Health(ctx context.Context, id string) (*Health, error) {
+	var info struct {
+		State struct {
+			Running   bool
+			StartedAt time.Time
+			Health    *struct{ Status string }
+		}
+	}
+	if err := c.do(ctx, http.MethodGet, "/containers/"+url.PathEscape(id)+"/json", nil, nil, &info); err != nil {
+		return nil, err
+	}
+	h := &Health{Running: info.State.Running, StartedAt: info.State.StartedAt}
+	if info.State.Health != nil {
+		h.Status = info.State.Health.Status
+	}
+	return h, nil
 }
