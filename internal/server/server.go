@@ -110,6 +110,8 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/foyer/widget", s.foyerWidget)
 	api.HandleFunc("POST /api/foyer/deploy/{name}", s.writable(s.foyerDeploy))
 	api.HandleFunc("GET /api/foyer/jobs/{id}", s.foyerJob)
+	api.HandleFunc("POST /api/foyer/releases/{owner}/{repo}/deploy", s.writable(s.foyerReleaseDeploy))
+	api.HandleFunc("POST /api/foyer/releases/{owner}/{repo}/pulls/{number}/merge", s.writable(s.foyerReleaseMerge))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/session", s.getSession)

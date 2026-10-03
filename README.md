@@ -61,7 +61,8 @@ that idles at about 4 MB of RAM. A lightweight replacement for
   result. `.env` edits are recorded by key name only, never values.
 - **Foyer**: serves a card in the
   [Foyer widget format](https://github.com/audemed44/foyer/blob/main/docs/app-widgets.md)
-  with a Deploy button per stack.
+  with a Deploy button per stack, and the release board's apps and PRs
+  that need you, with Deploy and Merge.
 
 ## Install
 
@@ -294,6 +295,15 @@ Add Hoist to Foyer as an `app` widget:
 It shows containers running, services waiting for a deploy and the last
 deploy, with a row per stack. Each row's **Deploy** runs
 `POST /api/foyer/deploy/<stack>` and follows `/api/foyer/jobs/<id>`.
+
+With the release board set up, the card adds a **Releases** figure
+(images ready to deploy plus PRs ready to merge, captioned like `2 PRs open
+· 1 ready to deploy · 1 failing`) and, above the stacks, a row for each app
+with an image waiting (**Deploy**, only its services) or a failed build,
+and for each PR that's ready to merge (**Merge**, a rebase merge that
+deletes the branch) or failing its checks. They go through the same checks
+and audit log as the Releases page. The card uses the last board and
+refreshes it behind the scenes, so it stays quick.
 
 ## Coming from Komodo
 
