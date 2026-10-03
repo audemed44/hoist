@@ -135,6 +135,18 @@ export const api = {
   /** The release board; refresh asks GitHub again instead of using the last few minutes' answer. */
   releases: (refresh = false) =>
     request<ReleasesInfo>(`/api/releases${refresh ? "?refresh=1" : ""}`),
+  /** Rebase-merges a pull request and deletes its branch; force skips the green-checks rule. */
+  merge: (repo: string, stackName: string, number: number, force = false) =>
+    request<{ sha: string; deleted: boolean; delete_error?: string }>(
+      "/api/releases/merge",
+      json("POST", { repo, stack: stackName, number, force }),
+    ),
+  /** Re-runs a pull request's failed checks, or (number 0) the failed image build. */
+  rerun: (repo: string, stackName: string, number = 0) =>
+    request<void>("/api/releases/rerun", json("POST", { repo, stack: stackName, number })),
+  /** Pulls and redeploys the services that run an app. */
+  deployApp: (repo: string, stackName: string) =>
+    request<Job>("/api/releases/deploy", json("POST", { repo, stack: stackName })),
   jobs: (stackName?: string, limit = 30) =>
     request<Job[]>(
       `/api/jobs?limit=${limit}${stackName ? `&stack=${encodeURIComponent(stackName)}` : ""}`,

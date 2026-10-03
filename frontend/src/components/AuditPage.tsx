@@ -13,6 +13,7 @@ const ACTIONS: [string, string][] = [
   ["env.save", "Environment edits"],
   ["update.apply", "Updates"],
   ["rollback.", "Rollbacks"],
+  ["release.", "Release board"],
   ["git.", "Git"],
   ["stack.", "Stacks added"],
 ];
@@ -21,6 +22,7 @@ const TRIGGERS: [string, string][] = [
   ["ui", "Browser"],
   ["api", "API token"],
   ["foyer", "Foyer"],
+  ["releases", "Release board"],
   ["auto", "Update policy"],
 ];
 const RESULTS: [string, string][] = [
