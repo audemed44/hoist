@@ -25,6 +25,8 @@ type fakeHub struct {
 	calls []string
 	// building is set once something was merged: the image build runs.
 	merged bool
+	// buildFails makes the merged commit's image build fail.
+	buildFails bool
 }
 
 func (f *fakeHub) called(c string) bool {
@@ -38,7 +40,10 @@ func (f *fakeHub) serve(t *testing.T) *httptest.Server {
 		body, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
 		f.calls = append(f.calls, r.Method+" "+r.URL.Path+" "+strings.TrimSpace(string(body)))
-		merged := f.merged
+		merged, build := f.merged, "success"
+		if f.buildFails {
+			build = "failure"
+		}
 		f.mu.Unlock()
 		pr := func(n int, sha string) string {
 			return fmt.Sprintf(`{"number":%d,"title":"pr %d","head":{"ref":"feat/%d","sha":%q,"repo":{"full_name":"me/app"}},"base":{"repo":{"full_name":"me/app"}},"user":{"login":"me"},"mergeable":true,"rebaseable":true,"mergeable_state":"clean"}`, n, n, n, sha)
@@ -61,7 +66,7 @@ func (f *fakeHub) serve(t *testing.T) *httptest.Server {
 			fmt.Fprint(w, `{"status":"ahead","ahead_by":1,"commits":[{"sha":"m1","commit":{"message":"pr 5"}}]}`)
 		case "GET /repos/me/app/actions/workflows/docker.yml/runs":
 			if merged {
-				fmt.Fprint(w, `{"workflow_runs":[`+run(90, "m1", "success")+`]}`)
+				fmt.Fprint(w, `{"workflow_runs":[`+run(90, "m1", build)+`]}`)
 			} else {
 				fmt.Fprint(w, `{"workflow_runs":[]}`)
 			}
@@ -281,8 +286,45 @@ func TestShipCancel(t *testing.T) {
 	if got.Job != "" {
 		t.Errorf("a cancelled ship deployed: %+v", got)
 	}
-	if w := e.do("DELETE", "/api/releases/ships/"+sh.ID, ""); w.Code != http.StatusConflict {
-		t.Errorf("cancel again: %d", w.Code)
+	// Once finished, it can be dismissed from the board.
+	if w := e.do("DELETE", "/api/releases/ships/"+sh.ID, ""); w.Code != http.StatusNoContent {
+		t.Errorf("dismiss: %d", w.Code)
+	}
+	if b := decode[releasesResponse](t, e.do("GET", "/api/releases", "")); len(b.Apps[0].Ships) != 0 {
+		t.Errorf("ships after dismissing = %+v", b.Apps[0].Ships)
+	}
+	if w := e.do("DELETE", "/api/releases/ships/"+sh.ID, ""); w.Code != http.StatusNotFound {
+		t.Errorf("dismiss again: %d", w.Code)
+	}
+}
+
+func TestFoyerDismissFailedShip(t *testing.T) {
+	fastShips(t)
+	e := newEnv(t, false)
+	hub := withBoard(t, e)
+	hub.buildFails = true
+	sh := decode[Ship](t, e.do("POST", "/api/releases/ship", `{"repo":"me/app","number":5}`))
+	waitShip(t, e, sh.ID, ShipFailed)
+	failed := func() *foyerItem {
+		for _, it := range decode[foyerWidget](t, e.do("GET", "/api/foyer/widget", "")).Items {
+			if it.Caption == "merge and deploy failed" {
+				return &it
+			}
+		}
+		return nil
+	}
+	it := failed()
+	if it == nil || it.Action == nil || it.Action.Label != "Dismiss" {
+		t.Fatalf("failed item = %+v", it)
+	}
+	if w := e.do("POST", it.Action.URL, "{}"); w.Code != http.StatusOK {
+		t.Fatalf("dismiss: %d %s", w.Code, w.Body)
+	}
+	if it := failed(); it != nil {
+		t.Errorf("still on the card: %+v", it)
+	}
+	if w := e.do("POST", "/api/foyer/ships/"+sh.ID+"/dismiss", "{}"); w.Code != http.StatusNotFound {
+		t.Errorf("dismiss again: %d", w.Code)
 	}
 }
 

@@ -213,7 +213,9 @@ releases:
 - **Merge and deploy** (a box in the merge dialog, ticked by default):
   Hoist merges, follows the image build of the merged commit (every 15s,
   up to 45 minutes), and deploys the app once it's published. The card
-  shows how far it got; it can be cancelled until the deploy starts. It's
+  shows how far it got; it can be cancelled until the deploy starts, and
+  once it has ended it stays on the card for an hour or until you
+  **Dismiss** it. It's
   something you start each time, not a standing auto-deploy rule, and it
   lives in memory: a restart of Hoist forgets one that's waiting.
 - **Notifications**: with an Apprise URL (`releases.notify`, default
@@ -306,7 +308,7 @@ that deletes the branch, then a wait for the merged commit's image build,
 then a deploy of the app, like the Releases page's merge and deploy) or
 failing its checks. Foyer follows it at `/api/foyer/ships/<id>`, and the
 merged PR stays on the card as its merge and deploy (building, deploying,
-deployed or failed). A PR of a rolled-back stack only gets **Merge**.
+deployed or failed; a failed one has **Dismiss**). A PR of a rolled-back stack only gets **Merge**.
 They go through the same checks and audit log as the Releases page. The card uses the last board and
 refreshes it behind the scenes, so it stays quick.
 

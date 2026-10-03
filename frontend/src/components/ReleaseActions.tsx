@@ -373,6 +373,12 @@ export function ShipNote(props: { ship: Ship; readOnly: boolean; onChange: () =>
           Cancel the deploy
         </button>
       )}
+      {(sh.state === "done" || sh.state === "failed" || sh.state === "cancelled") &&
+        !props.readOnly && (
+          <button class="btn btn-small" onClick={cancel}>
+            Dismiss
+          </button>
+        )}
       {error && <div class="form-error">{error}</div>}
     </div>
   );
