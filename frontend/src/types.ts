@@ -232,6 +232,8 @@ export interface Session {
   read_only: boolean;
   /** Commit messages must follow Conventional Commits. */
   conventional: boolean;
+  /** Foyer, the homelab's start page (HOMEPAGE_URL). */
+  foyer_url?: string;
 }
 
 export type Policy = "off" | "digest" | "patch" | "minor";

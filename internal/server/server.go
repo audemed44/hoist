@@ -37,6 +37,8 @@ type Options struct {
 	Releases *releases.Source
 	Token    string
 	ReadOnly bool
+	// FoyerURL links the header back to Foyer, the homelab's start page.
+	FoyerURL string
 	Web      fs.FS
 }
 

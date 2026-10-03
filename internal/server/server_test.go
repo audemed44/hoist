@@ -213,9 +213,10 @@ func TestAuth(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("cookie: %d", w.Code)
 	}
+	e.srv.FoyerURL = "https://home.example"
 	w = e.do("GET", "/api/session", "", "Authorization", "")
-	if s := decode[sessionInfo](t, w); s.Authenticated {
-		t.Error("session without credentials says authenticated")
+	if s := decode[sessionInfo](t, w); s.Authenticated || s.FoyerURL != "https://home.example" {
+		t.Errorf("session without credentials = %+v", s)
 	}
 }
 
