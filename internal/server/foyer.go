@@ -16,8 +16,9 @@ import (
 // Hoist serves a card in the Foyer widget format
 // (https://github.com/audemed44/foyer/blob/main/docs/app-widgets.md): one
 // row per stack with a Deploy action, after the release board's apps and
-// pull requests that need something (Deploy, Merge). Foyer calls it with the token as a
-// bearer token, from its server, so browsers never see the token.
+// pull requests that need something (Deploy, Merge & deploy) and its merge
+// and deploys under way. Foyer calls it with the token as a bearer token,
+// from its server, so browsers never see the token.
 
 type foyerStat struct {
 	Label   string `json:"label"`
@@ -233,16 +234,42 @@ func (s *Server) foyerReleases(ctx context.Context) (*foyerStat, []foyerItem) {
 	}
 
 	var items []foyerItem
+	ships := s.ships.list()
 	for _, a := range b.Apps {
 		name := a.Repo[strings.Index(a.Repo, "/")+1:]
 		path := "/api/foyer/releases/" + a.Repo
+		// A merged pull request leaves the board, so its merge and deploy
+		// stands in for it, under the same title (Foyer follows the action
+		// by it).
+		shipped := map[int]bool{}
+		for _, sh := range shipsOf(ships, a) {
+			shipped[sh.Number] = true
+			item := foyerItem{Title: name + " #" + strconv.Itoa(sh.Number), Subtitle: sh.Title, URL: "/releases"}
+			switch sh.State {
+			case ShipBuilding:
+				item.Caption = "building image…"
+			case ShipDeploying:
+				item.Caption = "deploying…"
+			case ShipDone:
+				item.Caption = "deployed " + ago(*sh.Finished)
+			case ShipFailed:
+				item.Caption = "merge and deploy failed"
+			default:
+				continue
+			}
+			items = append(items, item)
+		}
+		pinned := false
+		if st, ok := s.Config.Stack(a.Stack); ok && st.Pin != nil {
+			pinned = true
+		}
 		switch a.State {
 		case releases.Ready:
 			item := foyerItem{Title: name, Subtitle: "image ready, not deployed", URL: "/releases"}
 			if a.Behind > 0 {
 				item.Caption = plural(a.Behind, "new commit", "new commits")
 			}
-			if st, ok := s.Config.Stack(a.Stack); ok && st.Pin != nil {
+			if pinned {
 				item.Caption = a.Stack + " is rolled back"
 			} else if !s.ReadOnly {
 				item.Action = &foyerAction{Label: "Deploy", URL: path + "/deploy",
@@ -253,13 +280,23 @@ func (s *Server) foyerReleases(ctx context.Context) (*foyerStat, []foyerItem) {
 			items = append(items, foyerItem{Title: name, Subtitle: "image build failed", URL: "/releases"})
 		}
 		for _, p := range a.PRs {
+			if shipped[p.Number] {
+				continue // a board from before the merge
+			}
 			item := foyerItem{Title: name + " #" + strconv.Itoa(p.Number), Subtitle: p.Title, URL: "/releases"}
 			switch p.State {
 			case releases.PRReady:
 				item.Caption = "ready to merge"
-				if !s.ReadOnly {
+				switch {
+				case s.ReadOnly:
+				case pinned:
+					// A rolled-back stack doesn't take new images, so this
+					// only merges.
 					item.Action = &foyerAction{Label: "Merge", URL: path + "/pulls/" + strconv.Itoa(p.Number) + "/merge",
-						Confirm: "Rebase and merge #" + strconv.Itoa(p.Number) + " into " + a.Branch + ", and delete " + p.Branch + "?"}
+						Confirm: "Rebase and merge #" + strconv.Itoa(p.Number) + " into " + a.Branch + ", and delete " + p.Branch + "? " + a.Stack + " is rolled back, so it won't be deployed."}
+				default:
+					item.Action = &foyerAction{Label: "Merge & deploy", URL: path + "/pulls/" + strconv.Itoa(p.Number) + "/ship",
+						Confirm: "Rebase and merge #" + strconv.Itoa(p.Number) + " into " + a.Branch + ", wait for its image to build, then deploy " + name + " (" + strings.Join(a.Services, ", ") + ")?"}
 				}
 			case releases.PRFailing:
 				item.Caption = "CI failing"
@@ -316,4 +353,59 @@ func (s *Server) foyerReleaseMerge(w http.ResponseWriter, r *http.Request) {
 	}
 	msg := fmt.Sprintf("Merged %s#%d as %s; the image build starts on GitHub", a.Repo, n, shortSHA(res.SHA))
 	writeJSON(w, http.StatusOK, map[string]string{"message": msg, "url": "/releases"})
+}
+
+// foyerReleaseShip merges a pull request, waits for its image and deploys
+// it; Foyer follows it at its status URL.
+func (s *Server) foyerReleaseShip(w http.ResponseWriter, r *http.Request) {
+	a, ok := s.foyerReleaseApp(w, r)
+	if !ok {
+		return
+	}
+	n, err := strconv.Atoi(r.PathValue("number"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad pull request number")
+		return
+	}
+	sh, status, err := s.ship(r.Context(), a, n, false, "foyer")
+	if err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"message":    fmt.Sprintf("Merged %s#%d as %s; waiting for the image build", a.Repo, n, shortSHA(sh.SHA)),
+		"status_url": "/api/foyer/ships/" + sh.ID,
+		"url":        "/releases",
+	})
+}
+
+// foyerShip is a merge and deploy's state in Foyer's terms.
+func (s *Server) foyerShip(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var sh *Ship
+	for _, x := range s.ships.list() {
+		if x.ID == id {
+			sh = &x
+		}
+	}
+	if sh == nil {
+		writeError(w, http.StatusNotFound, "no such merge and deploy")
+		return
+	}
+	state := "running"
+	switch sh.State {
+	case ShipDone:
+		state = "done"
+	case ShipFailed, ShipCancelled:
+		state = "failed"
+	}
+	url := "/releases"
+	if sh.Job != "" {
+		url = "/jobs/" + sh.Job
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"state":   state,
+		"message": fmt.Sprintf("%s#%d: %s", sh.Repo, sh.Number, sh.Message),
+		"url":     url,
+	})
 }

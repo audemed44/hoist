@@ -308,6 +308,7 @@ func TestBoardEvents(t *testing.T) {
 }
 
 func TestFoyerReleases(t *testing.T) {
+	fastShips(t)
 	e := newEnv(t, false)
 	hub := withBoard(t, e)
 	widget := decode[foyerWidget](t, e.do("GET", "/api/foyer/widget", ""))
@@ -320,21 +321,49 @@ func TestFoyerReleases(t *testing.T) {
 	if stat == nil || stat.Value != "1" || stat.Caption != "2 PRs open · 1 failing" || stat.Tone != "bad" {
 		t.Fatalf("stat = %+v", stat)
 	}
-	// #5 to merge and #6 failing come before the stacks.
+	// #5 to merge and deploy and #6 failing come before the stacks.
 	if len(widget.Items) < 3 || widget.Items[0].Title != "app #5" || widget.Items[0].Action == nil || widget.Items[1].Caption != "CI failing" {
 		t.Fatalf("items = %+v", widget.Items)
 	}
+	if a := widget.Items[0].Action; a.Label != "Merge & deploy" || !strings.HasSuffix(a.URL, "/pulls/5/ship") {
+		t.Fatalf("action = %+v", a)
+	}
 	w := e.do("POST", widget.Items[0].Action.URL, "{}")
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Merged me/app#5") {
-		t.Fatalf("merge from Foyer: %d %s", w.Code, w.Body)
+	if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), "Merged me/app#5") {
+		t.Fatalf("merge and deploy from Foyer: %d %s", w.Code, w.Body)
 	}
 	if !hub.called(`PUT /repos/me/app/pulls/5/merge {"merge_method":"rebase","sha":"p5"}`) {
 		t.Errorf("calls = %v", hub.calls)
+	}
+	status := decode[map[string]string](t, w)["status_url"]
+	var res map[string]string
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		res = decode[map[string]string](t, e.do("GET", status, ""))
+		if res["state"] != "running" || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if res["state"] != "done" || !strings.HasPrefix(res["url"], "/jobs/") || !strings.Contains(res["message"], "Deployed") {
+		t.Fatalf("status = %+v", res)
+	}
+	if job := waitJob(t, e, strings.TrimPrefix(res["url"], "/jobs/")); job.Trigger != "foyer" {
+		t.Errorf("job = %+v", job)
 	}
 	events, _ := e.srv.Audit.List(t.Context(), audit.Query{Action: audit.ReleaseMerge, Trigger: "foyer"})
 	if len(events) != 1 {
 		t.Errorf("audit = %+v", events)
 	}
+	// The merged pull request stays on the card as its merge and deploy.
+	widget = decode[foyerWidget](t, e.do("GET", "/api/foyer/widget", ""))
+	if it := widget.Items[0]; it.Title != "app #5" || !strings.HasPrefix(it.Caption, "deployed") || it.Action != nil {
+		t.Errorf("shipped item = %+v", it)
+	}
+	if w := e.do("GET", "/api/foyer/ships/nope", ""); w.Code != http.StatusNotFound {
+		t.Errorf("unknown ship: %d", w.Code)
+	}
+
 	w = e.do("POST", "/api/foyer/releases/me/app/deploy", "{}")
 	if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), "status_url") {
 		t.Fatalf("deploy from Foyer: %d %s", w.Code, w.Body)
