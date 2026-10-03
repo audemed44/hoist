@@ -14,6 +14,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 	_ "time/tzdata" // the runtime image may have no zoneinfo; TZ needs this
@@ -103,7 +104,7 @@ func main() {
 	}
 	app := server.New(server.Options{
 		Config: cfg, Docker: dock, Jobs: store, Audit: auditLog, Updates: checker, Sleep: sleep,
-		Releases: board, Token: token, ReadOnly: readOnly, Web: dist,
+		Releases: board, Token: token, ReadOnly: readOnly, FoyerURL: foyerURL(), Web: dist,
 	})
 	srv := &http.Server{
 		Addr:              ":" + env("HOIST_PORT", "8080"),
@@ -181,4 +182,15 @@ func healthcheck() int {
 		return 1
 	}
 	return 0
+}
+
+// foyerURL is HOMEPAGE_URL, the link back to Foyer in the header, when
+// it's an http(s) address.
+func foyerURL() string {
+	u := os.Getenv("HOMEPAGE_URL")
+	if u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		slog.Warn("HOMEPAGE_URL isn't an http(s) address; ignoring it", "url", u)
+		return ""
+	}
+	return u
 }

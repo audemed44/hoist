@@ -81,10 +81,12 @@ type sessionInfo struct {
 	ReadOnly      bool `json:"read_only"`
 	// Conventional is set when commit messages must be Conventional Commits.
 	Conventional bool `json:"conventional"`
+	// FoyerURL is the homelab's start page, linked from the header.
+	FoyerURL string `json:"foyer_url,omitempty"`
 }
 
 func (s *Server) sessionInfo(authenticated bool) sessionInfo {
-	return sessionInfo{Authenticated: authenticated, ReadOnly: s.ReadOnly, Conventional: s.Config.Git.EnforceConventional()}
+	return sessionInfo{Authenticated: authenticated, ReadOnly: s.ReadOnly, Conventional: s.Config.Git.EnforceConventional(), FoyerURL: s.FoyerURL}
 }
 
 func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {

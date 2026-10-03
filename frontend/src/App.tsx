@@ -1,4 +1,4 @@
-import { LogOut } from "lucide-preact";
+import { ArrowLeft, LogOut } from "lucide-preact";
 import { useEffect, useState } from "preact/hooks";
 import { api, setUnauthorizedHandler } from "./api";
 import { settings } from "./lib";
@@ -42,6 +42,12 @@ function Shell(props: { session: Session; onSignOut: () => void }) {
   return (
     <div class="shell" onClick={onLinkClick}>
       <header class="topbar">
+        {props.session.foyer_url && (
+          <a class="home-link" href={props.session.foyer_url} title="Back to Foyer">
+            <ArrowLeft size={14} />
+            <span class="home-link-text">Foyer</span>
+          </a>
+        )}
         <a class="brand" href="/">
           <span class="brand-mark" aria-hidden="true" />
           Hoist

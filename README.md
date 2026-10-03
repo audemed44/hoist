@@ -243,6 +243,7 @@ Set the repo's remote to `git@github.com:you/stacks.git`, and give Hoist:
 |---|---|---|
 | `HOIST_TOKEN` | (required) | What you sign in with, and Foyer's key; anything but empty |
 | `HOIST_READ_ONLY` | `false` | Show everything, change nothing |
+| `HOMEPAGE_URL` | | Foyer's address, for a link back to it in the header |
 | `HOIST_PORT` | `8080` | |
 | `HOIST_CONFIG_DIR` | `/config` | `hoist.yaml`, the deploy logs (`jobs/`) and the audit log (`hoist.db`) |
 | `HOIST_COMPOSE` | `docker-compose` | Compose binary |
