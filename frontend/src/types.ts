@@ -332,3 +332,104 @@ export interface DriftInfo {
   /** A suggested commit message for the difference. */
   message: string;
 }
+
+export interface GitHubCommit {
+  sha: string;
+  /** The first line. */
+  message: string;
+  author: string;
+  time: string;
+  url: string;
+}
+
+export interface WorkflowRun {
+  id: number;
+  name: string;
+  workflow: number;
+  path: string;
+  event: string;
+  branch: string;
+  sha: string;
+  attempt: number;
+  /** queued, in_progress, completed… */
+  status: string;
+  /** Once completed: success, failure, cancelled, skipped… */
+  conclusion?: string;
+  url: string;
+  created: string;
+  updated: string;
+}
+
+export type PRState =
+  | "draft"
+  | "conflict"
+  | "ci-failing"
+  | "ci-running"
+  | "checking"
+  | "blocked"
+  | "changes-requested"
+  | "ready";
+
+export interface PullRequest {
+  number: number;
+  title: string;
+  draft: boolean;
+  author: string;
+  created: string;
+  url: string;
+  branch: string;
+  sha: string;
+  same_repo: boolean;
+  mergeable?: boolean;
+  rebaseable?: boolean;
+  mergeable_state?: string;
+  review?: "approved" | "changes_requested";
+  ci: "passing" | "failing" | "pending" | "none";
+  runs: WorkflowRun[];
+  state: PRState;
+}
+
+export type AppState = "build-failed" | "ready" | "building" | "not-built" | "deployed";
+
+/** One of your apps on the release board: its branch, image and what runs. */
+export interface ReleaseApp {
+  id: string;
+  /** owner/name */
+  repo: string;
+  url: string;
+  stack: string;
+  services: string[];
+  image: string;
+  running: { revision?: string; digest?: string; since: string };
+  branch: string;
+  head: string;
+  /** Commits on the branch the running image doesn't have. */
+  behind: number;
+  diverged?: boolean;
+  /** The newest of them, newest first. */
+  commits: GitHubCommit[];
+  compare_url?: string;
+  /** The latest image build on the branch. */
+  build?: WorkflowRun;
+  /** The registry digest of the image's tag now. */
+  latest?: string;
+  state: AppState;
+  prs: PullRequest[];
+  errors: string[];
+  /** Its stack is rolled back. */
+  pinned?: boolean;
+  active?: Job;
+  last?: Job;
+}
+
+export interface ReleasesInfo {
+  /** False without HOIST_GITHUB_TOKEN. */
+  configured: boolean;
+  checked_at: string;
+  owners: string[];
+  error?: string;
+  /** The image build workflow, e.g. docker.yml. */
+  workflow: string;
+  apps: ReleaseApp[];
+  summary: { prs: number; ready: number; failing: number; to_merge: number };
+}

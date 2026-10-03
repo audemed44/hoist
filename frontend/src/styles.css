@@ -1178,6 +1178,16 @@ select.input option {
     letter-spacing: 0.08em;
   }
 }
+@media (max-width: 480px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .topnav a {
+    padding: 6px 4px;
+    letter-spacing: 0.05em;
+  }
+}
 
 /* ── Add a stack ───────────────────────────────────────────────────────── */
 .add-section {
@@ -1333,4 +1343,106 @@ button.chip {
 }
 .deploy-row .list-main {
   overflow-wrap: anywhere;
+}
+
+/* ── Releases ──────────────────────────────────────────────────────────── */
+
+.tone-chip-good {
+  border-color: rgb(var(--good-rgb) / 0.5);
+  color: var(--good);
+}
+.tone-chip-bad {
+  border-color: rgb(var(--bad-rgb) / 0.6);
+  color: var(--bad);
+}
+.tone-chip-warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.tone-chip-accent {
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  color: var(--accent-hi);
+}
+.release-state {
+  align-self: center;
+}
+.release-commits,
+.release-prs {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.release-commits ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.release-commits li {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+.release-commit-msg {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.release-commits .link-btn,
+.release-commits > a {
+  align-self: flex-start;
+  font-size: 13px;
+}
+.pr-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.pr-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.pr-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.pr-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.pr-runs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+.pr-runs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.perm-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }

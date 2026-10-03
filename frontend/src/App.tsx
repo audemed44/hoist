@@ -6,6 +6,7 @@ import { AddStackPage } from "./components/AddStackPage";
 import { AuditPage } from "./components/AuditPage";
 import { JobPage } from "./components/JobPage";
 import { Login } from "./components/Login";
+import { ReleasesPage } from "./components/ReleasesPage";
 import { StackPage } from "./components/StackPage";
 import { StacksPage } from "./components/StacksPage";
 import { onLinkClick, useRoute } from "./router";
@@ -55,8 +56,11 @@ function Shell(props: { session: Session; onSignOut: () => void }) {
         )}
         <span class="spacer" />
         <nav class="topnav" aria-label="Pages">
-          <a class={route.page === "audit" ? "" : "active"} href="/">
+          <a class={route.page === "audit" || route.page === "releases" ? "" : "active"} href="/">
             Stacks
+          </a>
+          <a class={route.page === "releases" ? "active" : ""} href="/releases">
+            Releases
           </a>
           <a class={route.page === "audit" ? "active" : ""} href="/audit">
             Activity
@@ -78,6 +82,7 @@ function Shell(props: { session: Session; onSignOut: () => void }) {
         )}
         {route.page === "job" && <JobPage key={route.id} id={route.id} />}
         {route.page === "audit" && <AuditPage />}
+        {route.page === "releases" && <ReleasesPage readOnly={props.session.read_only} />}
         {route.page === "new" && <AddStackPage readOnly={props.session.read_only} />}
       </main>
     </div>

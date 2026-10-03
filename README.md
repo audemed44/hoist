@@ -42,6 +42,12 @@ that idles at about 4 MB of RAM. A lightweight replacement for
   good. **Roll back** redeploys the last good deploy before the current
   one, or any earlier one, with every image pinned by digest, so `:latest`
   can't drift back, until you **Resume :latest**.
+- **Releases**: for each of your own apps that Hoist deploys, the way from
+  pull request to running container: open PRs with their checks and
+  whether they can be rebased, the commits on `main` the running image
+  doesn't have yet, the image build, and whether a new image is waiting to
+  be deployed. Apps are found from the images' OCI labels, nothing to set
+  up but a GitHub token.
 - **Self-update**: Hoist can deploy its own stack. A short-lived helper
   container runs that deploy, so it finishes while Hoist is replaced.
 - **Add stacks**: adopt a compose project already running on the server
@@ -166,6 +172,33 @@ rollback:
   leaves tagged images alone. Older tags are removed as new deploys prove
   good.
 
+### Releases
+
+Set `HOIST_GITHUB_TOKEN` to a fine-grained token limited to your
+repositories, with **Pull requests**, **Contents** and **Actions** read and
+write (Metadata read comes with it). It's read when the Releases page (or
+Foyer's card) is open, cached for two minutes, with conditional requests,
+so it stays far inside GitHub's rate limit.
+
+```yaml
+releases:
+  owners: [you]          # whose repositories count as yours; default: the token's user
+  ignore: [you/sandbox]  # leave these off the board
+  workflow: docker.yml   # the workflow that builds and pushes the image
+```
+
+- **Apps** are the containers of Hoist's stacks whose image carries
+  `org.opencontainers.image.source` pointing at one of the owners' GitHub
+  repositories; `org.opencontainers.image.revision` is the commit it runs
+  (docker/metadata-action sets both).
+- Each app shows the commits on its default branch the running image
+  doesn't have, the latest run of the image workflow, and the registry's
+  digest for its tag next to the running one. Its badge: *image building*,
+  *build failed*, *image ready, not deployed*, *deployed*, or *commits, no
+  image* (the branch moved without a build, e.g. docs only).
+- Each open pull request shows the latest run of every workflow for its
+  head commit, its review state, and whether GitHub can rebase it.
+
 ### Pushing with a deploy key
 
 A deploy key can only write to the one repo, unlike a personal token:
@@ -193,6 +226,7 @@ Set the repo's remote to `git@github.com:you/stacks.git`, and give Hoist:
 | `HOIST_HOST_HOME` | `$HOME` | Your home folder on the host; compose expands `~/` in bind mounts with it |
 | `HOIST_GATEHOUSE_URL` | | [Gatehouse](https://github.com/audemed44/gatehouse)'s admin port, e.g. `http://host.docker.internal:9140` |
 | `HOIST_GATEHOUSE_TOKEN` | | Its discovery token (`GATEHOUSE_DISCOVERY_TOKEN`) |
+| `HOIST_GITHUB_TOKEN` | | A fine-grained GitHub token for the release board (see Releases) |
 
 **With Gatehouse's scale-to-zero,** containers it stopped on purpose show as
 *asleep* rather than waiting for a start: they don't count as a change to

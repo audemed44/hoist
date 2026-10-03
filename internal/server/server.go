@@ -18,6 +18,7 @@ import (
 	"github.com/audemed44/hoist/internal/docker"
 	"github.com/audemed44/hoist/internal/jobs"
 	"github.com/audemed44/hoist/internal/registry"
+	"github.com/audemed44/hoist/internal/releases"
 	"github.com/audemed44/hoist/internal/sleeping"
 	"github.com/audemed44/hoist/internal/updates"
 )
@@ -30,7 +31,10 @@ type Options struct {
 	Updates *updates.Checker
 	// Sleep knows which containers Gatehouse has put to sleep; nil without
 	// Gatehouse.
-	Sleep    *sleeping.Client
+	Sleep *sleeping.Client
+	// Releases reads the release board; its GitHub client is nil without
+	// a token.
+	Releases *releases.Source
 	Token    string
 	ReadOnly bool
 	Web      fs.FS
@@ -52,6 +56,9 @@ type Server struct {
 }
 
 func New(o Options) *Server {
+	if o.Releases == nil {
+		o.Releases = &releases.Source{Docker: o.Docker, Config: o.Config, Registry: registry.New()}
+	}
 	return &Server{
 		Options: o, session: sessionValue(o.Token),
 		starting: map[string]bool{}, plans: map[string]cachedServices{}, judged: map[string]judgement{},
@@ -89,6 +96,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/updates", s.getUpdates)
 	api.HandleFunc("POST /api/updates/check", s.postCheck)
 	api.HandleFunc("POST /api/stacks/{name}/services/{service}/update", s.writable(s.applyUpdate))
+	api.HandleFunc("GET /api/releases", s.getReleases)
 	api.HandleFunc("GET /api/audit", s.listAudit)
 	api.HandleFunc("GET /api/jobs", s.listJobs)
 	api.HandleFunc("GET /api/jobs/{id}", s.getJob)
