@@ -1,9 +1,11 @@
 import { ExternalLink, RefreshCw } from "lucide-preact";
+import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import { api } from "../api";
 import { useData } from "../hooks";
 import { ago, appStateLabel, prStateLabel, runLabel, type Tone } from "../lib";
 import type { PullRequest, ReleaseApp, ReleasesInfo } from "../types";
+import { AppButtons, PRButtons, useReleaseActions } from "./ReleaseActions";
 import { Dot, ErrorNote, SectionHead } from "./ui";
 
 /**
@@ -64,7 +66,14 @@ export function ReleasesPage(props: { readOnly: boolean }) {
       )}
       <div class="stack-list stagger">
         {data.apps.map((a, i) => (
-          <AppCard key={a.id} index={i + 1} app={a} board={data} readOnly={props.readOnly} />
+          <AppCard
+            key={a.id}
+            index={i + 1}
+            app={a}
+            board={data}
+            readOnly={props.readOnly}
+            onChange={refresh}
+          />
         ))}
       </div>
     </div>
@@ -139,9 +148,11 @@ function AppCard(props: {
   app: ReleaseApp;
   board: ReleasesInfo;
   readOnly: boolean;
+  onChange: () => void;
 }) {
   const a = props.app;
   const [allCommits, setAllCommits] = useState(false);
+  const actions = useReleaseActions(a, props.onChange);
   const name = a.repo.split("/")[1];
   const commits = allCommits ? a.commits : a.commits.slice(0, 4);
   return (
@@ -251,11 +262,15 @@ function AppCard(props: {
         {a.prs.length > 0 && (
           <div class="release-prs">
             {a.prs.map((p) => (
-              <PRRow key={p.number} pr={p} />
+              <PRRow key={p.number} pr={p}>
+                <PRButtons pr={p} readOnly={props.readOnly} open={actions.open} />
+              </PRRow>
             ))}
           </div>
         )}
 
+        <AppButtons app={a} readOnly={props.readOnly} open={actions.open} />
+        {actions.dialog}
         {a.errors.length > 0 && (
           <div class="note note-warn">
             {a.errors.map((e) => (
@@ -275,7 +290,7 @@ function runTone(r: { status: string; conclusion?: string }): Tone {
   return "bad";
 }
 
-function PRRow(props: { pr: PullRequest }) {
+function PRRow(props: { pr: PullRequest; children?: ComponentChildren }) {
   const p = props.pr;
   return (
     <div class="pr-row">
@@ -298,6 +313,7 @@ function PRRow(props: { pr: PullRequest }) {
         )}
       </div>
       <span class={`chip tone-chip-${PR_TONE[p.state]}`}>{prStateLabel(p.state)}</span>
+      {props.children}
     </div>
   );
 }

@@ -28,6 +28,9 @@ const (
 	// Rollback pins a stack to an earlier deploy; RollbackResume unpins it.
 	Rollback       = "rollback.pin"
 	RollbackResume = "rollback.resume"
+	// The release board's actions on GitHub.
+	ReleaseMerge = "release.merge"
+	ReleaseRerun = "release.rerun"
 )
 
 // Results.

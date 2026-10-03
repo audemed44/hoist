@@ -198,6 +198,15 @@ releases:
   image* (the branch moved without a build, e.g. docs only).
 - Each open pull request shows the latest run of every workflow for its
   head commit, its review state, and whether GitHub can rebase it.
+- **Merge** rebase-merges a pull request (no merge commit, so `main` stays
+  linear) and deletes its branch. It's offered once the checks are green;
+  otherwise it asks for a second confirmation. One GitHub can't rebase
+  cleanly links to GitHub instead: Hoist never falls back to another
+  merge method. **Re-run failed** re-runs a PR's (or the image build's)
+  failed jobs. **Deploy** pulls and redeploys only the services that run
+  the app, through the usual deploy; it's refused while the stack is
+  rolled back. For two hours after a deploy the card offers **Roll back**.
+  All of them are confirmed and go in the activity log.
 
 ### Pushing with a deploy key
 
