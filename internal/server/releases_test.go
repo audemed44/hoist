@@ -306,3 +306,41 @@ func TestBoardEvents(t *testing.T) {
 		t.Errorf("ci = %+v", e)
 	}
 }
+
+func TestFoyerReleases(t *testing.T) {
+	e := newEnv(t, false)
+	hub := withBoard(t, e)
+	widget := decode[foyerWidget](t, e.do("GET", "/api/foyer/widget", ""))
+	var stat *foyerStat
+	for i := range widget.Stats {
+		if widget.Stats[i].Label == "Releases" {
+			stat = &widget.Stats[i]
+		}
+	}
+	if stat == nil || stat.Value != "1" || stat.Caption != "2 PRs open · 1 failing" || stat.Tone != "bad" {
+		t.Fatalf("stat = %+v", stat)
+	}
+	// #5 to merge and #6 failing come before the stacks.
+	if len(widget.Items) < 3 || widget.Items[0].Title != "app #5" || widget.Items[0].Action == nil || widget.Items[1].Caption != "CI failing" {
+		t.Fatalf("items = %+v", widget.Items)
+	}
+	w := e.do("POST", widget.Items[0].Action.URL, "{}")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Merged me/app#5") {
+		t.Fatalf("merge from Foyer: %d %s", w.Code, w.Body)
+	}
+	if !hub.called(`PUT /repos/me/app/pulls/5/merge {"merge_method":"rebase","sha":"p5"}`) {
+		t.Errorf("calls = %v", hub.calls)
+	}
+	events, _ := e.srv.Audit.List(t.Context(), audit.Query{Action: audit.ReleaseMerge, Trigger: "foyer"})
+	if len(events) != 1 {
+		t.Errorf("audit = %+v", events)
+	}
+	w = e.do("POST", "/api/foyer/releases/me/app/deploy", "{}")
+	if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), "status_url") {
+		t.Fatalf("deploy from Foyer: %d %s", w.Code, w.Body)
+	}
+	url := decode[map[string]string](t, w)["url"]
+	if job := waitJob(t, e, strings.TrimPrefix(url, "/jobs/")); job.Trigger != "foyer" {
+		t.Errorf("job = %+v", job)
+	}
+}

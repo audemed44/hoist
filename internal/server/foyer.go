@@ -1,18 +1,22 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/audemed44/hoist/internal/jobs"
+	"github.com/audemed44/hoist/internal/releases"
 )
 
 // Hoist serves a card in the Foyer widget format
 // (https://github.com/audemed44/foyer/blob/main/docs/app-widgets.md): one
-// row per stack with a Deploy action. Foyer calls it with the token as a
+// row per stack with a Deploy action, after the release board's apps and
+// pull requests that need something (Deploy, Merge). Foyer calls it with the token as a
 // bearer token, from its server, so browsers never see the token.
 
 type foyerStat struct {
@@ -129,6 +133,13 @@ func (s *Server) foyerWidget(w http.ResponseWriter, r *http.Request) {
 		}
 		out.Stats = append(out.Stats, foyerStat{Label: "Last deploy", Value: ago(last.Started), Caption: last.Stack, Tone: tone})
 	}
+	if stat, items := s.foyerReleases(r.Context()); stat != nil {
+		out.Stats = append(out.Stats, *stat)
+		out.Items = append(items, out.Items...)
+		out.ItemsTitle = "Releases and stacks"
+	}
+	// Foyer shows up to 12.
+	out.Items = out.Items[:min(12, len(out.Items))]
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -178,4 +189,131 @@ func ago(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 	}
+}
+
+// foyerReleases is the release board for Foyer's card: a stat summing it
+// up, and an item with its one action for each app or pull request that
+// needs something. The last board is used even when it's a little old
+// (it's refreshed behind the scenes), so the card stays quick.
+func (s *Server) foyerReleases(ctx context.Context) (*foyerStat, []foyerItem) {
+	if s.Releases.GitHub == nil {
+		return nil, nil
+	}
+	b := s.Releases.Cached()
+	switch {
+	case b == nil:
+		b = s.Releases.Get(ctx, boardAge)
+	case time.Since(b.CheckedAt) > boardAge:
+		go s.Releases.Get(context.Background(), boardAge)
+	}
+	if b.Error != "" {
+		return &foyerStat{Label: "Releases", Value: "!", Caption: "GitHub: " + b.Error, Tone: "bad"}, nil
+	}
+	sum := b.Summary()
+	var parts []string
+	plural := func(n int, one, many string) string {
+		if n == 1 {
+			return "1 " + one
+		}
+		return strconv.Itoa(n) + " " + many
+	}
+	parts = append(parts, plural(sum.PRs, "PR open", "PRs open"))
+	if sum.Ready > 0 {
+		parts = append(parts, strconv.Itoa(sum.Ready)+" ready to deploy")
+	}
+	if sum.Failing > 0 {
+		parts = append(parts, strconv.Itoa(sum.Failing)+" failing")
+	}
+	stat := &foyerStat{Label: "Releases", Value: strconv.Itoa(sum.Ready + sum.ToMerge), Caption: strings.Join(parts, " · ")}
+	switch {
+	case sum.Failing > 0:
+		stat.Tone = "bad"
+	case sum.Ready+sum.ToMerge > 0:
+		stat.Tone = "accent"
+	}
+
+	var items []foyerItem
+	for _, a := range b.Apps {
+		name := a.Repo[strings.Index(a.Repo, "/")+1:]
+		path := "/api/foyer/releases/" + a.Repo
+		switch a.State {
+		case releases.Ready:
+			item := foyerItem{Title: name, Subtitle: "image ready, not deployed", URL: "/releases"}
+			if a.Behind > 0 {
+				item.Caption = plural(a.Behind, "new commit", "new commits")
+			}
+			if st, ok := s.Config.Stack(a.Stack); ok && st.Pin != nil {
+				item.Caption = a.Stack + " is rolled back"
+			} else if !s.ReadOnly {
+				item.Action = &foyerAction{Label: "Deploy", URL: path + "/deploy",
+					Confirm: "Pull and deploy " + name + " (" + strings.Join(a.Services, ", ") + ")?"}
+			}
+			items = append(items, item)
+		case releases.BuildFailed:
+			items = append(items, foyerItem{Title: name, Subtitle: "image build failed", URL: "/releases"})
+		}
+		for _, p := range a.PRs {
+			item := foyerItem{Title: name + " #" + strconv.Itoa(p.Number), Subtitle: p.Title, URL: "/releases"}
+			switch p.State {
+			case releases.PRReady:
+				item.Caption = "ready to merge"
+				if !s.ReadOnly {
+					item.Action = &foyerAction{Label: "Merge", URL: path + "/pulls/" + strconv.Itoa(p.Number) + "/merge",
+						Confirm: "Rebase and merge #" + strconv.Itoa(p.Number) + " into " + a.Branch + ", and delete " + p.Branch + "?"}
+				}
+			case releases.PRFailing:
+				item.Caption = "CI failing"
+			default:
+				continue
+			}
+			items = append(items, item)
+		}
+	}
+	return stat, items
+}
+
+// foyerReleaseApp finds the app of a Foyer action.
+func (s *Server) foyerReleaseApp(w http.ResponseWriter, r *http.Request) (*releases.App, bool) {
+	a, status, err := s.app(r, releaseTarget{Repo: r.PathValue("owner") + "/" + r.PathValue("repo")})
+	if err != nil {
+		writeError(w, status, err.Error())
+		return nil, false
+	}
+	return a, true
+}
+
+func (s *Server) foyerReleaseDeploy(w http.ResponseWriter, r *http.Request) {
+	a, ok := s.foyerReleaseApp(w, r)
+	if !ok {
+		return
+	}
+	job, status, err := s.deployApp(a, "foyer")
+	if err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"message":    "Deploying " + a.Repo + "…",
+		"status_url": "/api/foyer/jobs/" + job.ID,
+		"url":        "/jobs/" + job.ID,
+	})
+}
+
+func (s *Server) foyerReleaseMerge(w http.ResponseWriter, r *http.Request) {
+	a, ok := s.foyerReleaseApp(w, r)
+	if !ok {
+		return
+	}
+	n, err := strconv.Atoi(r.PathValue("number"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad pull request number")
+		return
+	}
+	res, status, err := s.merge(r.Context(), a, n, false, "foyer")
+	if err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
+	msg := fmt.Sprintf("Merged %s#%d as %s; the image build starts on GitHub", a.Repo, n, shortSHA(res.SHA))
+	writeJSON(w, http.StatusOK, map[string]string{"message": msg, "url": "/releases"})
 }
