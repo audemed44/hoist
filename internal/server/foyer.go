@@ -254,6 +254,9 @@ func (s *Server) foyerReleases(ctx context.Context) (*foyerStat, []foyerItem) {
 				item.Caption = "deployed " + ago(*sh.Finished)
 			case ShipFailed:
 				item.Caption = "merge and deploy failed"
+				if !s.ReadOnly {
+					item.Action = &foyerAction{Label: "Dismiss", URL: "/api/foyer/ships/" + sh.ID + "/dismiss"}
+				}
 			default:
 				continue
 			}
@@ -377,6 +380,15 @@ func (s *Server) foyerReleaseShip(w http.ResponseWriter, r *http.Request) {
 		"status_url": "/api/foyer/ships/" + sh.ID,
 		"url":        "/releases",
 	})
+}
+
+// foyerDismissShip takes a finished merge and deploy off the card.
+func (s *Server) foyerDismissShip(w http.ResponseWriter, r *http.Request) {
+	if !s.ships.dismiss(r.PathValue("id")) {
+		writeError(w, http.StatusNotFound, "no finished merge and deploy by that id")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Dismissed"})
 }
 
 // foyerShip is a merge and deploy's state in Foyer's terms.

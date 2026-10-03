@@ -116,6 +116,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/foyer/releases/{owner}/{repo}/pulls/{number}/merge", s.writable(s.foyerReleaseMerge))
 	api.HandleFunc("POST /api/foyer/releases/{owner}/{repo}/pulls/{number}/ship", s.writable(s.foyerReleaseShip))
 	api.HandleFunc("GET /api/foyer/ships/{id}", s.foyerShip)
+	api.HandleFunc("POST /api/foyer/ships/{id}/dismiss", s.writable(s.foyerDismissShip))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/session", s.getSession)

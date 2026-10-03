@@ -243,9 +243,26 @@ func (s *Server) deployShip(ctx context.Context, id string, a releases.App, fini
 	}
 }
 
-// deleteShip cancels a ship that hasn't started its deploy.
+// dismiss drops a finished ship from the board before shipKeep is up.
+func (y *shipyard) dismiss(id string) bool {
+	y.mu.Lock()
+	defer y.mu.Unlock()
+	sh, ok := y.ships[id]
+	if !ok || sh.Finished == nil {
+		return false
+	}
+	delete(y.ships, id)
+	return true
+}
+
+// deleteShip cancels a ship that hasn't started its deploy, or dismisses
+// one that has finished.
 func (s *Server) deleteShip(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if s.ships.dismiss(id) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	s.ships.mu.Lock()
 	sh, ok := s.ships.ships[id]
 	var state string
