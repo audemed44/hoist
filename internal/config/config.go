@@ -138,6 +138,7 @@ type Config struct {
 	Git      Git      `yaml:"git" json:"git"`
 	Updates  Updates  `yaml:"updates" json:"updates"`
 	Rollback Rollback `yaml:"rollback" json:"rollback"`
+	Releases Releases `yaml:"releases" json:"releases"`
 	// Stacks is read through List and Stack once the server runs, since
 	// AddStack can change it.
 	Stacks []Stack `yaml:"stacks" json:"stacks"`
@@ -299,6 +300,12 @@ func (c *Config) normalise() error {
 	}
 	if c.Rollback.Keep < 0 {
 		return errors.New("rollback.keep can't be negative")
+	}
+	if err := c.Releases.normalise(); err != nil {
+		return err
+	}
+	if c.Releases.Notify == "" {
+		c.Releases.Notify = c.Updates.Notify
 	}
 	seen := map[string]bool{}
 	for i := range c.Stacks {

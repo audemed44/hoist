@@ -13,6 +13,7 @@ import type {
   EnvInfo,
   GitStatus,
   Job,
+  ReleasesInfo,
   RollbackPlan,
   SaveResult,
   Session,
@@ -131,6 +132,9 @@ export const api = {
       `${stack(stackName)}/services/${encodeURIComponent(service)}/update`,
       json("POST", { tag: tag ?? "" }),
     ),
+  /** The release board; refresh asks GitHub again instead of using the last few minutes' answer. */
+  releases: (refresh = false) =>
+    request<ReleasesInfo>(`/api/releases${refresh ? "?refresh=1" : ""}`),
   jobs: (stackName?: string, limit = 30) =>
     request<Job[]>(
       `/api/jobs?limit=${limit}${stackName ? `&stack=${encodeURIComponent(stackName)}` : ""}`,

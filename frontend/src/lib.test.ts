@@ -70,6 +70,7 @@ describe("routes", () => {
       "/stacks/main-stack/env",
       "/jobs/20260930-120000-abcdef",
       "/audit",
+      "/releases",
       "/new",
     ]) {
       expect(href(parseRoute(path))).toBe(path);

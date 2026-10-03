@@ -244,3 +244,47 @@ export function when(iso: string): string {
     minute: "2-digit",
   });
 }
+
+/** The release board's badge for an app. */
+export function appStateLabel(a: { state: string; behind: number }): string {
+  switch (a.state) {
+    case "build-failed":
+      return "Build failed";
+    case "ready":
+      return "Image ready, not deployed";
+    case "building":
+      return "Image building";
+    case "not-built":
+      return a.behind === 1 ? "1 commit, no image" : `${a.behind} commits, no image`;
+    default:
+      return "Deployed";
+  }
+}
+
+export function prStateLabel(state: string): string {
+  return (
+    {
+      ready: "Ready to merge",
+      "ci-failing": "CI failing",
+      "ci-running": "CI running",
+      conflict: "Can't rebase",
+      checking: "Checking",
+      draft: "Draft",
+      blocked: "Blocked",
+      "changes-requested": "Changes requested",
+    }[state] ?? state
+  );
+}
+
+/** A workflow run in a word or two: "running", "passed", "failed"… */
+export function runLabel(r: { name?: string; status: string; conclusion?: string }): string {
+  const what =
+    r.status !== "completed"
+      ? r.status === "in_progress"
+        ? "running"
+        : "queued"
+      : r.conclusion === "success"
+        ? "passed"
+        : (r.conclusion ?? "done").replace("_", " ");
+  return r.name ? `${r.name}: ${what}` : what;
+}

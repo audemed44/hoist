@@ -23,7 +23,10 @@ import (
 	"github.com/audemed44/hoist/internal/config"
 	"github.com/audemed44/hoist/internal/deploy"
 	"github.com/audemed44/hoist/internal/docker"
+	"github.com/audemed44/hoist/internal/github"
 	"github.com/audemed44/hoist/internal/jobs"
+	"github.com/audemed44/hoist/internal/registry"
+	"github.com/audemed44/hoist/internal/releases"
 	"github.com/audemed44/hoist/internal/server"
 	"github.com/audemed44/hoist/internal/sleeping"
 	"github.com/audemed44/hoist/internal/updates"
@@ -94,7 +97,14 @@ func main() {
 	if u := os.Getenv("HOIST_GATEHOUSE_URL"); u != "" {
 		sleep = sleeping.New(u, os.Getenv("HOIST_GATEHOUSE_TOKEN"))
 	}
-	app := server.New(server.Options{Config: cfg, Docker: dock, Jobs: store, Audit: auditLog, Updates: checker, Sleep: sleep, Token: token, ReadOnly: readOnly, Web: dist})
+	board := &releases.Source{Docker: dock, Config: cfg, Registry: registry.New()}
+	if t := os.Getenv("HOIST_GITHUB_TOKEN"); t != "" {
+		board.GitHub = github.New(t)
+	}
+	app := server.New(server.Options{
+		Config: cfg, Docker: dock, Jobs: store, Audit: auditLog, Updates: checker, Sleep: sleep,
+		Releases: board, Token: token, ReadOnly: readOnly, Web: dist,
+	})
 	srv := &http.Server{
 		Addr:              ":" + env("HOIST_PORT", "8080"),
 		Handler:           app.Handler(),
@@ -109,7 +119,8 @@ func main() {
 		defer cancel()
 		_ = srv.Shutdown(shutdown)
 	}()
-	slog.Info("hoist listening", "addr", srv.Addr, "stacks", len(cfg.Stacks), "read_only", readOnly)
+	slog.Info("hoist listening", "addr", srv.Addr, "stacks", len(cfg.Stacks), "read_only", readOnly,
+		"release_board", board.GitHub != nil)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("server stopped", "err", err)
 		os.Exit(1)
