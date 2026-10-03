@@ -185,6 +185,8 @@ releases:
   owners: [you]          # whose repositories count as yours; default: the token's user
   ignore: [you/sandbox]  # leave these off the board
   workflow: docker.yml   # the workflow that builds and pushes the image
+  every: "off"           # e.g. 10m: check in the background and notify
+  notify: http://apprise-api:8000/notify/hoist   # optional; default updates.notify
 ```
 
 - **Apps** are the containers of Hoist's stacks whose image carries
@@ -207,6 +209,17 @@ releases:
   the app, through the usual deploy; it's refused while the stack is
   rolled back. For two hours after a deploy the card offers **Roll back**.
   All of them are confirmed and go in the activity log.
+- **Merge and deploy** (a box in the merge dialog, ticked by default):
+  Hoist merges, follows the image build of the merged commit (every 15s,
+  up to 45 minutes), and deploys the app once it's published. The card
+  shows how far it got; it can be cancelled until the deploy starts. It's
+  something you start each time, not a standing auto-deploy rule, and it
+  lives in memory: a restart of Hoist forgets one that's waiting.
+- **Notifications**: with an Apprise URL (`releases.notify`, default
+  `updates.notify`) a merge and deploy reports how it ended. Set
+  `releases.every: 10m` and Hoist also checks the board in the background
+  and tells you when a PR's checks fail, an image build fails, or a new
+  image is waiting to be deployed.
 
 ### Pushing with a deploy key
 

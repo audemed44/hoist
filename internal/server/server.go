@@ -53,6 +53,7 @@ type Server struct {
 	self     *docker.Self // nil when Hoist isn't in a container
 
 	registry *registry.Client
+	ships    shipyard
 }
 
 func New(o Options) *Server {
@@ -62,7 +63,7 @@ func New(o Options) *Server {
 	return &Server{
 		Options: o, session: sessionValue(o.Token),
 		starting: map[string]bool{}, plans: map[string]cachedServices{}, judged: map[string]judgement{},
-		registry: registry.New(),
+		registry: registry.New(), ships: shipyard{ships: map[string]*Ship{}},
 	}
 }
 
@@ -100,6 +101,8 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/releases/merge", s.writable(s.postMerge))
 	api.HandleFunc("POST /api/releases/rerun", s.writable(s.postRerun))
 	api.HandleFunc("POST /api/releases/deploy", s.writable(s.postReleaseDeploy))
+	api.HandleFunc("POST /api/releases/ship", s.writable(s.postShip))
+	api.HandleFunc("DELETE /api/releases/ships/{id}", s.writable(s.deleteShip))
 	api.HandleFunc("GET /api/audit", s.listAudit)
 	api.HandleFunc("GET /api/jobs", s.listJobs)
 	api.HandleFunc("GET /api/jobs/{id}", s.getJob)

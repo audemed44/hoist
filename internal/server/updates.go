@@ -110,7 +110,7 @@ func (s *Server) autoUpdate(st updates.State) {
 		job, err := s.applyUpdates(stack, bumps, pull, "auto")
 		if err != nil {
 			slog.Warn("automatic update not applied", "stack", stack.Name, "err", err)
-			s.notify("failure", "Hoist: couldn't update "+stack.Name, err.Error())
+			s.notify(s.Config.Updates.Notify, "failure", "Hoist: couldn't update "+stack.Name, err.Error())
 			continue
 		}
 		go s.notifyWhenDone(job)
@@ -268,17 +268,17 @@ func (s *Server) notifyWhenDone(job *jobs.Job) {
 			continue
 		}
 		if j.State == jobs.Failed {
-			s.notify("failure", "Hoist: update of "+j.Stack+" failed", j.Error)
+			s.notify(s.Config.Updates.Notify, "failure", "Hoist: update of "+j.Stack+" failed", j.Error)
 		} else {
-			s.notify("success", "Hoist: updated "+j.Stack, j.Result.Summary())
+			s.notify(s.Config.Updates.Notify, "success", "Hoist: updated "+j.Stack, j.Result.Summary())
 		}
 		return
 	}
 }
 
-// notify posts to an Apprise API endpoint, when one is configured.
-func (s *Server) notify(kind, title, body string) {
-	url := s.Config.Updates.Notify
+// notify posts to an Apprise API endpoint (…/notify/<key>), when one is
+// configured.
+func (s *Server) notify(url, kind, title, body string) {
 	if url == "" {
 		return
 	}

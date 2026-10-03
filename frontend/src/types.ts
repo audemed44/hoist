@@ -420,6 +420,24 @@ export interface ReleaseApp {
   pinned?: boolean;
   active?: Job;
   last?: Job;
+  /** Merges waiting to deploy, and recent ones. */
+  ships: Ship[];
+}
+
+/** "Merge and deploy when ready": a merge followed through to a deploy. */
+export interface Ship {
+  id: string;
+  repo: string;
+  stack: string;
+  number: number;
+  title: string;
+  sha: string;
+  state: "building" | "deploying" | "done" | "failed" | "cancelled";
+  message: string;
+  build_url?: string;
+  job?: string;
+  started: string;
+  finished?: string;
 }
 
 export interface ReleasesInfo {

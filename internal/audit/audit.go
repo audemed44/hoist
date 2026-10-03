@@ -31,6 +31,7 @@ const (
 	// The release board's actions on GitHub.
 	ReleaseMerge = "release.merge"
 	ReleaseRerun = "release.rerun"
+	ReleaseShip  = "release.ship"
 )
 
 // Results.

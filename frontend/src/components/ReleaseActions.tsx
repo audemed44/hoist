@@ -3,7 +3,7 @@ import { useState } from "preact/hooks";
 import { api } from "../api";
 import { prStateLabel } from "../lib";
 import { navigate } from "../router";
-import type { PullRequest, ReleaseApp } from "../types";
+import type { PullRequest, ReleaseApp, Ship } from "../types";
 import { RollbackDialog } from "./Rollback";
 import { Dialog } from "./ui";
 
@@ -142,10 +142,17 @@ function MergeDialog(props: {
   const { app, pr } = props;
   const green = pr.state === "ready";
   const [force, setForce] = useState(false);
+  const [andDeploy, setAndDeploy] = useState(!app.pinned);
   const [done, setDone] = useState("");
   const { busy, error, run } = useRun();
   const merge = () =>
     run(async () => {
+      if (andDeploy) {
+        await api.ship(app.repo, app.stack, pr.number, !green);
+        props.onDone();
+        props.onClose();
+        return;
+      }
       const res = await api.merge(app.repo, app.stack, pr.number, !green);
       setDone(
         `Merged as ${res.sha.slice(0, 7)}.` +
@@ -173,7 +180,14 @@ function MergeDialog(props: {
               onClick={merge}
               disabled={busy || (!green && !force)}
             >
-              <GitMerge size={14} /> {green ? "Rebase and merge" : "Merge anyway"}
+              <GitMerge size={14} />{" "}
+              {andDeploy
+                ? green
+                  ? "Merge and deploy"
+                  : "Merge anyway and deploy"
+                : green
+                  ? "Rebase and merge"
+                  : "Merge anyway"}
             </button>
           )}
         </>
@@ -185,9 +199,22 @@ function MergeDialog(props: {
       <p class="muted">
         Rebases <span class="mono">{pr.branch}</span> onto <span class="mono">{app.branch}</span> of{" "}
         {app.repo} (no merge commit)
-        {pr.same_repo ? ", then deletes the branch." : "."} The image build starts on GitHub; deploy
-        it from the board once it's published.
+        {pr.same_repo ? ", then deletes the branch." : "."}
       </p>
+      <label class="check">
+        <input
+          type="checkbox"
+          checked={andDeploy}
+          disabled={app.pinned}
+          onChange={() => setAndDeploy(!andDeploy)}
+        />
+        <span>
+          Deploy when the image is built: Hoist follows the {app.branch} build and then deploys{" "}
+          <span class="mono">{app.services.join(", ")}</span>. You can cancel it until the deploy
+          starts.
+          {app.pinned && ` (${app.stack} is rolled back, so it can't deploy.)`}
+        </span>
+      </label>
       {!green && (
         <label class="check note note-warn">
           <input type="checkbox" checked={force} onChange={() => setForce(!force)} />
@@ -292,5 +319,61 @@ function DeployAppDialog(props: { app: ReleaseApp; onClose: () => void }) {
       )}
       {error && <div class="form-error">{error}</div>}
     </Dialog>
+  );
+}
+
+/** A merge on its way to a deploy, or one that just got there. */
+export function ShipNote(props: { ship: Ship; readOnly: boolean; onChange: () => void }) {
+  const sh = props.ship;
+  const [error, setError] = useState("");
+  const cancel = async () => {
+    setError("");
+    try {
+      await api.cancelShip(sh.id);
+      props.onChange();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const tone =
+    sh.state === "failed"
+      ? "note-bad"
+      : sh.state === "done"
+        ? ""
+        : sh.state === "cancelled"
+          ? "note-warn"
+          : "note-accent";
+  return (
+    <div class={`note ${tone} ship-note`}>
+      <span>
+        <strong>
+          #{sh.number} {sh.title}
+        </strong>
+        <span class="muted"> · merged as {sh.sha.slice(0, 7)} · </span>
+        {sh.message}
+        {sh.build_url && sh.state === "building" && (
+          <>
+            {" "}
+            <a class="link" href={sh.build_url} target="_blank" rel="noreferrer">
+              follow it on GitHub
+            </a>
+          </>
+        )}
+        {sh.job && (
+          <>
+            {" "}
+            <a class="link" href={`/jobs/${sh.job}`}>
+              log
+            </a>
+          </>
+        )}
+      </span>
+      {sh.state === "building" && !props.readOnly && (
+        <button class="btn btn-small" onClick={cancel}>
+          Cancel the deploy
+        </button>
+      )}
+      {error && <div class="form-error">{error}</div>}
+    </div>
   );
 }

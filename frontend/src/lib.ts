@@ -72,6 +72,7 @@ export const ACTION_LABEL: Record<string, string> = {
   "rollback.resume": "Resumed :latest",
   "release.merge": "Merged",
   "release.rerun": "Re-ran CI",
+  "release.ship": "Merge and deploy",
 };
 
 /** A stack name as the server accepts it: lowercase letters, digits, - and _. */

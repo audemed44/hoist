@@ -5,7 +5,7 @@ import { api } from "../api";
 import { useData } from "../hooks";
 import { ago, appStateLabel, prStateLabel, runLabel, type Tone } from "../lib";
 import type { PullRequest, ReleaseApp, ReleasesInfo } from "../types";
-import { AppButtons, PRButtons, useReleaseActions } from "./ReleaseActions";
+import { AppButtons, PRButtons, ShipNote, useReleaseActions } from "./ReleaseActions";
 import { Dot, ErrorNote, SectionHead } from "./ui";
 
 /**
@@ -269,6 +269,9 @@ function AppCard(props: {
           </div>
         )}
 
+        {a.ships.map((sh) => (
+          <ShipNote key={sh.id} ship={sh} readOnly={props.readOnly} onChange={props.onChange} />
+        ))}
         <AppButtons app={a} readOnly={props.readOnly} open={actions.open} />
         {actions.dialog}
         {a.errors.length > 0 && (

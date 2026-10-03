@@ -16,6 +16,7 @@ import type {
   ReleasesInfo,
   RollbackPlan,
   SaveResult,
+  Ship,
   Session,
   StackInfo,
   UpdatesInfo,
@@ -141,6 +142,11 @@ export const api = {
       "/api/releases/merge",
       json("POST", { repo, stack: stackName, number, force }),
     ),
+  /** Merges, waits for the image build, then deploys the app. */
+  ship: (repo: string, stackName: string, number: number, force = false) =>
+    request<Ship>("/api/releases/ship", json("POST", { repo, stack: stackName, number, force })),
+  cancelShip: (id: string) =>
+    request<void>(`/api/releases/ships/${encodeURIComponent(id)}`, { method: "DELETE" }),
   /** Re-runs a pull request's failed checks, or (number 0) the failed image build. */
   rerun: (repo: string, stackName: string, number = 0) =>
     request<void>("/api/releases/rerun", json("POST", { repo, stack: stackName, number })),
