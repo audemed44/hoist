@@ -122,8 +122,11 @@ func (s *Server) launch(st config.Stack, j jobs.Job) (*jobs.Job, int, error) {
 	delete(s.judged, st.Name) // there's a new deploy to judge once it ends
 	s.mu.Unlock()
 	if !self {
+		// The deploy records its progress on its own copy; the caller
+		// answers with this one.
+		run := *job
 		go func() {
-			if err := deploy.Run(context.Background(), s.Docker, s.Jobs, st, job); err != nil {
+			if err := deploy.Run(context.Background(), s.Docker, s.Jobs, st, &run); err != nil {
 				slog.Warn("deploy failed", "stack", st.Name, "job", job.ID, "err", err)
 			}
 		}()
