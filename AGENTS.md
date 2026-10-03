@@ -22,7 +22,11 @@ a rolled-back stack is pinned by an override in `/config/pins/<stack>/`
   git run as child processes only while they're needed. The only
   background work is the update check (`internal/updates`, every
   `updates.every`, default 6h): manifest HEADs and tag lists, never pulls.
-  Git fetches happen on page loads, at most every two minutes.
+  Git fetches happen on page loads, at most every two minutes. The release
+  board (`internal/releases`, `internal/github`) reads GitHub when it's
+  looked at, cached two minutes, with ETags; it runs in the background
+  only with `releases.every` set, or while a "merge and deploy" waits for
+  its image build.
 - With `HOIST_GATEHOUSE_URL`, Hoist reads Gatehouse's discovery API
   (`internal/sleeping`, cached 20s) to learn which containers it stopped on
   purpose. Those are shown asleep, aren't planned as a start, and a deploy

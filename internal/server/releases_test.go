@@ -10,10 +10,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/audemed44/hoist/internal/audit"
 	"github.com/audemed44/hoist/internal/github"
 	"github.com/audemed44/hoist/internal/jobs"
+	"github.com/audemed44/hoist/internal/releases"
 )
 
 // fakeHub is GitHub for one repository, me/app, with two open pull
@@ -193,5 +195,114 @@ func TestReleasesWithoutToken(t *testing.T) {
 	}
 	if w := e.do("POST", "/api/releases/merge", `{"repo":"me/app","number":5}`); w.Code != http.StatusConflict {
 		t.Errorf("merge without a token: %d", w.Code)
+	}
+}
+
+func fastShips(t *testing.T) {
+	old := shipPoll
+	shipPoll = 20 * time.Millisecond
+	t.Cleanup(func() { shipPoll = old })
+}
+
+func waitShip(t *testing.T, e *env, id string, state string) Ship {
+	t.Helper()
+	for range 200 {
+		for _, sh := range e.srv.ships.list() {
+			if sh.ID == id && sh.State == state {
+				return sh
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("ship %s never got to %s: %+v", id, state, e.srv.ships.list())
+	return Ship{}
+}
+
+func TestShip(t *testing.T) {
+	fastShips(t)
+	e := newEnv(t, false)
+	notified := make(chan string, 4)
+	apprise := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		notified <- body["type"] + ": " + body["body"]
+	}))
+	defer apprise.Close()
+	e.srv.Config.Releases.Notify = apprise.URL
+	hub := withBoard(t, e)
+
+	w := e.do("POST", "/api/releases/ship", `{"repo":"me/app","number":5}`)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("ship: %d %s", w.Code, w.Body)
+	}
+	sh := decode[Ship](t, w)
+	if sh.SHA != "m1" || sh.State != ShipBuilding {
+		t.Fatalf("ship = %+v", sh)
+	}
+	if w := e.do("POST", "/api/releases/ship", `{"repo":"me/app","number":6,"force":true}`); w.Code != http.StatusConflict {
+		t.Errorf("a second ship of the same app: %d", w.Code)
+	}
+	done := waitShip(t, e, sh.ID, ShipDone)
+	if done.Job == "" || !strings.HasPrefix(done.Message, "Deployed") {
+		t.Errorf("done = %+v", done)
+	}
+	job, _ := e.srv.Jobs.Get(done.Job)
+	if job == nil || !slices.Equal(job.Services, []string{"web"}) {
+		t.Errorf("job = %+v", job)
+	}
+	if !hub.called("GET /repos/me/app/actions/workflows/docker.yml/runs ") {
+		t.Errorf("calls = %v", hub.calls)
+	}
+	select {
+	case n := <-notified:
+		if !strings.HasPrefix(n, "success: Deployed") {
+			t.Errorf("notified %q", n)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("no notification")
+	}
+	b := decode[releasesResponse](t, e.do("GET", "/api/releases", ""))
+	if len(b.Apps[0].Ships) != 1 || b.Apps[0].Ships[0].State != ShipDone {
+		t.Errorf("ships on the board = %+v", b.Apps[0].Ships)
+	}
+}
+
+func TestShipCancel(t *testing.T) {
+	fastShips(t)
+	e := newEnv(t, false)
+	withBoard(t, e)
+	// No build ever shows up for the merge.
+	e.srv.Config.Releases.Workflow = "missing.yml"
+	sh := decode[Ship](t, e.do("POST", "/api/releases/ship", `{"repo":"me/app","number":5}`))
+	if w := e.do("DELETE", "/api/releases/ships/"+sh.ID, ""); w.Code != http.StatusNoContent {
+		t.Fatalf("cancel: %d %s", w.Code, w.Body)
+	}
+	got := waitShip(t, e, sh.ID, ShipCancelled)
+	if got.Job != "" {
+		t.Errorf("a cancelled ship deployed: %+v", got)
+	}
+	if w := e.do("DELETE", "/api/releases/ships/"+sh.ID, ""); w.Code != http.StatusConflict {
+		t.Errorf("cancel again: %d", w.Code)
+	}
+}
+
+func TestBoardEvents(t *testing.T) {
+	b := &releases.Board{Apps: []releases.App{{
+		ID: "me/app@s", Repo: "me/app", State: releases.Ready, Head: "h", Latest: "d", Behind: 2,
+		Commits: []github.Commit{{Message: "feat: x"}},
+		PRs: []releases.PR{
+			{PullRequest: github.PullRequest{Number: 3, SHA: "a", Title: "t"}, State: releases.PRFailing},
+			{PullRequest: github.PullRequest{Number: 4}, State: releases.PRReady},
+		},
+	}}}
+	ev := boardEvents(b)
+	if len(ev) != 2 {
+		t.Fatalf("events = %+v", ev)
+	}
+	if e := ev["ready me/app@s h d"]; e.body != "A new image is published and waiting to be deployed: feat: x (and 1 more)" {
+		t.Errorf("ready = %+v", e)
+	}
+	if e := ev["ci me/app 3 a"]; e.kind != "failure" || e.title != "Hoist: CI failing on app#3" {
+		t.Errorf("ci = %+v", e)
 	}
 }

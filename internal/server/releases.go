@@ -28,6 +28,8 @@ type releaseApp struct {
 	// Active is its stack's running deploy; Last the latest finished one.
 	Active *jobs.Job `json:"active,omitempty"`
 	Last   *jobs.Job `json:"last,omitempty"`
+	// Ships are its merges waiting to deploy, and recent ones.
+	Ships []Ship `json:"ships"`
 }
 
 type releasesResponse struct {
@@ -46,8 +48,9 @@ func (s *Server) board(r *http.Request, maxAge time.Duration) (*releases.Board, 
 		Configured: b.Configured, CheckedAt: b.CheckedAt, Owners: b.Owners, Error: b.Error,
 		Workflow: s.Config.Releases.Workflow, Apps: []releaseApp{}, Summary: b.Summary(),
 	}
+	ships := s.ships.list()
 	for _, a := range b.Apps {
-		ra := releaseApp{App: a, Active: s.active(a.Stack), Last: s.Jobs.Latest(a.Stack)}
+		ra := releaseApp{App: a, Active: s.active(a.Stack), Last: s.Jobs.Latest(a.Stack), Ships: shipsOf(ships, a)}
 		if st, ok := s.Config.Stack(a.Stack); ok {
 			ra.Pinned = st.Pin != nil
 		}
