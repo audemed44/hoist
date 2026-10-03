@@ -300,9 +300,13 @@ With the release board set up, the card adds a **Releases** figure
 (images ready to deploy plus PRs ready to merge, captioned like `2 PRs open
 · 1 ready to deploy · 1 failing`) and, above the stacks, a row for each app
 with an image waiting (**Deploy**, only its services) or a failed build,
-and for each PR that's ready to merge (**Merge**, a rebase merge that
-deletes the branch) or failing its checks. They go through the same checks
-and audit log as the Releases page. The card uses the last board and
+and for each PR that's ready to merge (**Merge & deploy**: a rebase merge
+that deletes the branch, then a wait for the merged commit's image build,
+then a deploy of the app, like the Releases page's merge and deploy) or
+failing its checks. Foyer follows it at `/api/foyer/ships/<id>`, and the
+merged PR stays on the card as its merge and deploy (building, deploying,
+deployed or failed). A PR of a rolled-back stack only gets **Merge**.
+They go through the same checks and audit log as the Releases page. The card uses the last board and
 refreshes it behind the scenes, so it stays quick.
 
 ## Coming from Komodo
