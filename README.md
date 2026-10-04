@@ -10,6 +10,11 @@ that idles at about 4 MB of RAM. A lightweight replacement for
 - **Deploy**: `docker compose pull`, then `up -d --remove-orphans`, with a
   live log. Only services whose config or image changed are recreated, and
   the result says which. Deploy a whole stack or a single service.
+  A deploy runs the files on disk, so when the remote has commits that
+  aren't here yet (a PR merged on GitHub), the deploy dialog offers to pull
+  them first, ticked; Foyer's Deploy button always does. A branch that
+  also has commits of its own can't be fast-forwarded, and Foyer's deploy
+  is refused rather than run on the old files.
 - **Compose editor**: YAML editor, checked with `docker compose config`
   before anything is written, a diff to review, then a commit with a
   Conventional Commits message written for you
@@ -297,7 +302,7 @@ Add Hoist to Foyer as an `app` widget:
 
 It shows containers running, services waiting for a deploy and the last
 deploy, with a row per stack. Each row's **Deploy** runs
-`POST /api/foyer/deploy/<stack>` and follows `/api/foyer/jobs/<id>`.
+`POST /api/foyer/deploy/<stack>` (which pulls what was merged first) and follows `/api/foyer/jobs/<id>`.
 
 With the release board set up, the card adds a **Releases** figure
 (images ready to deploy plus PRs ready to merge, captioned like `2 PRs open

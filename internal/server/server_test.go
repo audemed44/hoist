@@ -762,3 +762,48 @@ func TestSuggestHelpers(t *testing.T) {
 		t.Errorf("freeName = %q", n)
 	}
 }
+
+// A deploy can pull what was merged on GitHub first; Foyer's always does.
+func TestDeployPullsFirst(t *testing.T) {
+	e := newEnv(t, false)
+	// Someone merges a change on "GitHub".
+	other := filepath.Join(e.root, "other")
+	git(t, e.root, "clone", "-q", filepath.Join(e.root, "remote.git"), other)
+	merged := "services:\n  web:\n    image: nginx:1.27\n"
+	_ = os.WriteFile(filepath.Join(other, "docker-compose.yml"), []byte(merged), 0o644)
+	git(t, other, "commit", "-q", "-am", "feat: bump web")
+	git(t, other, "push", "-q")
+
+	// Without pull, the deploy runs the file on disk.
+	w := e.do("POST", "/api/stacks/main-stack/deploy", `{}`)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("deploy: %d %s", w.Code, w.Body)
+	}
+	waitJob(t, e, decode[jobs.Job](t, w).ID)
+	if data, _ := os.ReadFile(e.stack.ComposePath()); string(data) == merged {
+		t.Fatal("a plain deploy pulled")
+	}
+	w = e.do("POST", "/api/stacks/main-stack/deploy", `{"pull":true}`)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("deploy with pull: %d %s", w.Code, w.Body)
+	}
+	waitJob(t, e, decode[jobs.Job](t, w).ID)
+	if data, _ := os.ReadFile(e.stack.ComposePath()); string(data) != merged {
+		t.Fatalf("not pulled: %q", data)
+	}
+	if !strings.Contains(e.do("GET", "/api/audit", "").Body.String(), "before deploying") {
+		t.Error("the pull isn't in the audit log")
+	}
+
+	// A branch with commits of its own and new ones upstream can't be
+	// fast-forwarded: the deploy is refused, not run on the old file.
+	_ = os.WriteFile(filepath.Join(other, "docker-compose.yml"), []byte("services:\n  web:\n    image: nginx:1.28\n"), 0o644)
+	git(t, other, "commit", "-q", "-am", "feat: bump web again")
+	git(t, other, "push", "-q")
+	_ = os.WriteFile(filepath.Join(e.stack.Path, "notes.txt"), []byte("local"), 0o644)
+	git(t, e.stack.Path, "add", "notes.txt")
+	git(t, e.stack.Path, "commit", "-q", "-m", "chore: local")
+	if w = e.do("POST", "/api/foyer/deploy/main-stack", ""); w.Code != http.StatusConflict {
+		t.Fatalf("diverged: %d %s", w.Code, w.Body)
+	}
+}

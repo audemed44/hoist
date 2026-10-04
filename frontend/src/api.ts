@@ -114,8 +114,9 @@ export const api = {
   commit: (name: string, message: string) =>
     request<GitStatus>(`${stack(name)}/git/commit`, json("POST", { message })),
 
-  deploy: (name: string, services?: string[]) =>
-    request<Job>(`${stack(name)}/deploy`, json("POST", { services: services ?? [] })),
+  /** pull fast-forwards the stack's repo to what was merged first. */
+  deploy: (name: string, services?: string[], pull = false) =>
+    request<Job>(`${stack(name)}/deploy`, json("POST", { services: services ?? [], pull })),
   /** Finished deploys and what they ran, newest first. */
   deploys: (name: string) => request<DeployRecord[]>(`${stack(name)}/deploys`),
   /** A rollback to the deploy `to`, or by default to the last good one before the current. */

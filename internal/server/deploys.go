@@ -144,6 +144,47 @@ func (s *Server) launch(st config.Stack, j jobs.Job) (*jobs.Job, int, error) {
 	return job, http.StatusAccepted, nil
 }
 
+// pullFirst fast-forwards a stack's repo to its upstream before a deploy,
+// so the deploy runs what was merged on GitHub, not what's on disk. It
+// fetches first; a repo that isn't behind (or isn't a repo) is left as it
+// is. A branch with commits of its own as well can't be fast-forwarded,
+// so the deploy is refused rather than run on the old files.
+func (s *Server) pullFirst(ctx context.Context, st config.Stack, trigger string) (int, error) {
+	repo, err := gitrepo.Open(ctx, st.Path)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	if repo == nil {
+		return http.StatusOK, nil
+	}
+	if err = repo.Fetch(ctx); err != nil {
+		return http.StatusBadGateway, fmt.Errorf("couldn't fetch before deploying: %w", err)
+	}
+	status, err := repo.Status(ctx, st.ComposePath(), 0)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	if status.Behind == 0 {
+		return http.StatusOK, nil
+	}
+	if status.Ahead > 0 {
+		return http.StatusConflict, fmt.Errorf("%s has %d commits of its own and is %d behind %s, so it can't be pulled; push or sort it out, then deploy",
+			status.Branch, status.Ahead, status.Behind, status.Upstream)
+	}
+	err = repo.Pull(ctx)
+	ev := audit.Event{Stack: st.Name, Action: audit.GitPull, Trigger: trigger, Detail: "before deploying"}
+	if err != nil {
+		ev.Result, ev.Error = audit.Failed, err.Error()
+	} else if after, serr := repo.Status(ctx, st.ComposePath(), 0); serr == nil {
+		ev.Commit = after.Head
+	}
+	s.record(ev)
+	if err != nil {
+		return http.StatusBadGateway, fmt.Errorf("couldn't pull before deploying: %w", err)
+	}
+	return http.StatusOK, nil
+}
+
 func (s *Server) postDeploy(w http.ResponseWriter, r *http.Request) {
 	st, ok := s.stack(w, r)
 	if !ok {
@@ -151,9 +192,17 @@ func (s *Server) postDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Services []string `json:"services"`
+		// Pull fast-forwards the repo first (pullFirst).
+		Pull bool `json:"pull"`
 	}
 	if r.ContentLength != 0 && !readJSON(w, r, 16<<10, &body) {
 		return
+	}
+	if body.Pull {
+		if status, err := s.pullFirst(r.Context(), st, triggerOf(r)); err != nil {
+			writeError(w, status, err.Error())
+			return
+		}
 	}
 	job, status, err := s.startDeploy(st, body.Services, triggerOf(r), "")
 	if err != nil {
