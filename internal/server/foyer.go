@@ -144,10 +144,16 @@ func (s *Server) foyerWidget(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// foyerDeploy starts a whole-stack deploy and tells Foyer where to follow it.
+// foyerDeploy starts a whole-stack deploy and tells Foyer where to follow
+// it. Foyer's button has no dialog to ask in, so it always pulls what was
+// merged first.
 func (s *Server) foyerDeploy(w http.ResponseWriter, r *http.Request) {
 	st, ok := s.stack(w, r)
 	if !ok {
+		return
+	}
+	if status, err := s.pullFirst(r.Context(), st, "foyer"); err != nil {
+		writeError(w, status, err.Error())
 		return
 	}
 	job, status, err := s.startDeploy(st, nil, "foyer", "")
