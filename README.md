@@ -258,6 +258,8 @@ Set the repo's remote to `git@github.com:you/stacks.git`, and give Hoist:
 | `HOIST_GATEHOUSE_URL` | | [Gatehouse](https://github.com/audemed44/gatehouse)'s admin port, e.g. `http://host.docker.internal:9140` |
 | `HOIST_GATEHOUSE_TOKEN` | | Its discovery token (`GATEHOUSE_DISCOVERY_TOKEN`) |
 | `HOIST_GITHUB_TOKEN` | | A fine-grained GitHub token for the release board (see Releases) |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `LOG_FORMAT` | `json` | `text` for reading in a terminal |
 
 **With Gatehouse's scale-to-zero,** containers it stopped on purpose show as
 *asleep* rather than waiting for a start: they don't count as a change to
@@ -286,6 +288,17 @@ root on the host. So:
   can't read the token through `${HOIST_TOKEN}`. (Nor Hoist's `TZ`: shell
   variables override `.env` in compose, so passing them on would change
   stacks.)
+
+## Logs
+
+Hoist writes one JSON object per line on stderr, for
+[Logbook](https://github.com/audemed44/logbook) to collect: every request
+(failures as errors, changes at info, plain reads at debug), background
+jobs with how long they took, and an audit line for sign-ins. Nothing it
+stores goes into the logs. A message repeated more than 20 times a minute
+is held back and counted, at most 600 lines a minute get out, and long
+values are cut at 4 KB, so a failing Hoist can't flood the disk. Docker's
+own copy is capped in compose (`logging:`, 3 × 10 MB).
 
 ## Foyer
 

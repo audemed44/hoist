@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"slices"
@@ -19,6 +18,7 @@ import (
 	"github.com/audemed44/hoist/internal/docker"
 	"github.com/audemed44/hoist/internal/gitrepo"
 	"github.com/audemed44/hoist/internal/jobs"
+	"github.com/audemed44/hoist/internal/logging"
 )
 
 var errBusy = errors.New("a deploy of this stack is already running")
@@ -126,9 +126,8 @@ func (s *Server) launch(st config.Stack, j jobs.Job) (*jobs.Job, int, error) {
 		// answers with this one.
 		run := *job
 		go func() {
-			if err := deploy.Run(context.Background(), s.Docker, s.Jobs, st, &run); err != nil {
-				slog.Warn("deploy failed", "stack", st.Name, "job", job.ID, "err", err)
-			}
+			ctx, logRun := logging.Job(context.Background(), "deploy", "stack", st.Name, "job", job.ID, "trigger", j.Trigger)
+			logRun.End(deploy.Run(ctx, s.Docker, s.Jobs, st, &run))
 		}()
 		return job, http.StatusAccepted, nil
 	}

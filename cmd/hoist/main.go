@@ -26,6 +26,7 @@ import (
 	"github.com/audemed44/hoist/internal/docker"
 	"github.com/audemed44/hoist/internal/github"
 	"github.com/audemed44/hoist/internal/jobs"
+	"github.com/audemed44/hoist/internal/logging"
 	"github.com/audemed44/hoist/internal/registry"
 	"github.com/audemed44/hoist/internal/releases"
 	"github.com/audemed44/hoist/internal/server"
@@ -45,11 +46,11 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(healthcheck())
 	}
-	level := slog.LevelInfo
-	if os.Getenv("HOIST_DEBUG") != "" {
-		level = slog.LevelDebug
+	// HOIST_DEBUG still works: it's LOG_LEVEL=debug.
+	if os.Getenv("HOIST_DEBUG") != "" && os.Getenv("LOG_LEVEL") == "" {
+		os.Setenv("LOG_LEVEL", "debug")
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	logging.Setup("hoist", os.Stderr)
 	compose.Bin = env("HOIST_COMPOSE", compose.Bin)
 
 	configDir := env("HOIST_CONFIG_DIR", "/config")
@@ -110,6 +111,7 @@ func main() {
 		Addr:              ":" + env("HOIST_PORT", "8080"),
 		Handler:           app.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		ErrorLog:          logging.ServerErrorLog(),
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -153,8 +155,10 @@ func runJob(cfg *config.Config, dock *docker.Client, store *jobs.Store, id strin
 		fmt.Fprintf(log, "Running in a helper container, so Hoist can be replaced while this carries on.\n\n")
 		log.Close()
 	}
-	if err := deploy.Run(context.Background(), dock, store, st, job); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	ctx, run := logging.Job(context.Background(), "deploy", "stack", job.Stack, "job", job.ID, "trigger", job.Trigger, "helper", true)
+	err = deploy.Run(ctx, dock, store, st, job)
+	run.End(err)
+	if err != nil {
 		return 1
 	}
 	return 0

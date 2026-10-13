@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/audemed44/hoist/internal/envfile"
 	"github.com/audemed44/hoist/internal/gitrepo"
 	"github.com/audemed44/hoist/internal/jobs"
+	"github.com/audemed44/hoist/internal/logging"
 	"github.com/audemed44/hoist/internal/updates"
 )
 
@@ -75,14 +77,16 @@ func (s *Server) RunUpdates(ctx context.Context) {
 }
 
 func (s *Server) checkUpdates(ctx context.Context, apply bool) {
+	ctx, run := logging.Job(ctx, "updates.check")
 	st, err := s.Updates.Check(ctx)
-	if err != nil {
-		if !errors.Is(err, updates.ErrBusy) {
-			slog.Warn("update check failed", "err", err)
-		}
+	if errors.Is(err, updates.ErrBusy) {
 		return
 	}
-	slog.Info("update check done", "updates", st.Count(""))
+	if err != nil {
+		run.End(err)
+		return
+	}
+	run.End(nil, "updates", st.Count(""))
 	if apply {
 		s.autoUpdate(st)
 	}
@@ -292,6 +296,11 @@ func (s *Server) notify(url, kind, title, body string) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		// Not err itself: it holds the URL, and its key.
+		var ue *neturl.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
 		slog.Warn("notify failed", "err", err)
 		return
 	}

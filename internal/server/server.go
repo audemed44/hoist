@@ -17,6 +17,7 @@ import (
 	"github.com/audemed44/hoist/internal/config"
 	"github.com/audemed44/hoist/internal/docker"
 	"github.com/audemed44/hoist/internal/jobs"
+	"github.com/audemed44/hoist/internal/logging"
 	"github.com/audemed44/hoist/internal/registry"
 	"github.com/audemed44/hoist/internal/releases"
 	"github.com/audemed44/hoist/internal/sleeping"
@@ -127,7 +128,7 @@ func (s *Server) Handler() http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.Handle("/", s.spa())
-	return securityHeaders(sameOrigin(mux))
+	return logging.Requests(securityHeaders(sameOrigin(mux)))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
