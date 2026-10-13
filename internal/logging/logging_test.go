@@ -240,6 +240,23 @@ func TestRouteMessage(t *testing.T) {
 	}
 }
 
+func TestSecretPathRedacted(t *testing.T) {
+	buf, _, _ := testLogger(t, slog.LevelDebug)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /ping/{token}/{kind}", func(w http.ResponseWriter, _ *http.Request) {})
+	mux.HandleFunc("POST /notify/{key}", func(w http.ResponseWriter, _ *http.Request) {})
+	h := Requests(mux)
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/ping/s3cr3t-abc/fail", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/notify/k3y", nil))
+	lines := buf.lines(t)
+	if lines[0]["path"] != "/ping/[redacted]/fail" || lines[1]["path"] != "/notify/[redacted]" {
+		t.Fatalf("paths: %v %v", lines[0]["path"], lines[1]["path"])
+	}
+	if strings.Contains(buf.b.String(), "s3cr3t") || strings.Contains(buf.b.String(), "k3y") {
+		t.Fatal("a secret reached the log")
+	}
+}
+
 func TestJob(t *testing.T) {
 	buf, _, _ := testLogger(t, slog.LevelInfo)
 	ctx, run := Job(context.Background(), "mail.sync", "label", "Banks")
