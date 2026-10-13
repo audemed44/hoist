@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"regexp"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -68,8 +69,9 @@ func Requests(next http.Handler) http.Handler {
 			attrs := []slog.Attr{
 				slog.String("kind", "request"),
 				slog.String("method", r.Method),
-				// Never the query: it can carry tokens.
-				slog.String("path", r.URL.Path),
+				// Never the query, and no secret path segment: either can
+				// carry a token.
+				slog.String("path", loggedPath(r)),
 				slog.Int("status", status),
 				slog.Int64("dur_ms", dur.Milliseconds()),
 				slog.Int64("bytes", rec.bytes),
@@ -96,6 +98,22 @@ func route(r *http.Request) string {
 	}
 	if !strings.Contains(p, " ") {
 		p = r.Method + " " + p
+	}
+	return p
+}
+
+// secretWildcard matches route wildcards whose value is a secret:
+// /ping/{token}, /notify/{key}.
+var secretWildcard = regexp.MustCompile(`\{([A-Za-z_]*(?i:token|key|secret|password)[A-Za-z_]*)(?:\.\.\.)?\}`)
+
+// loggedPath is the request's path with the values of secret wildcards
+// replaced.
+func loggedPath(r *http.Request) string {
+	p := r.URL.Path
+	for _, m := range secretWildcard.FindAllStringSubmatch(r.Pattern, -1) {
+		if v := r.PathValue(m[1]); v != "" {
+			p = strings.Replace(p, "/"+v, "/[redacted]", 1)
+		}
 	}
 	return p
 }
