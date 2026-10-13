@@ -5,6 +5,12 @@ services:
     image: ghcr.io/audemed44/hoist:latest
     container_name: hoist
     restart: unless-stopped
+    # Cap Docker's copy of the logs: 3 files of 10 MB, oldest dropped.
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
     # The user that owns your stack folders, so files Hoist writes (and git
     # objects) stay yours. `id -u` / `id -g` on the host. For a uid other
     # than 1000 with an ssh git remote, also mount /etc/passwd:/etc/passwd:ro.

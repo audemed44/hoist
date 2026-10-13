@@ -10,6 +10,7 @@ import (
 
 	"github.com/audemed44/hoist/internal/audit"
 	"github.com/audemed44/hoist/internal/envfile"
+	"github.com/audemed44/hoist/internal/logging"
 )
 
 // triggerOf tells a signed-in browser (the session cookie) from a script
@@ -24,6 +25,16 @@ func triggerOf(r *http.Request) string {
 // record adds to the audit log. A failure there is logged, not returned: the
 // action it describes has already happened.
 func (s *Server) record(e audit.Event) {
+	// The same event as a log line, for Logbook: names and ids, never env
+	// values (Detail lists env keys only).
+	args := []any{"stack", e.Stack, "trigger", e.Trigger, "result", e.Result}
+	for _, kv := range [][2]string{{"services", strings.Join(e.Services, ",")}, {"detail", e.Detail}, {"commit", e.Commit}, {"job", e.Job}, {"err", e.Error}} {
+		if kv[1] != "" {
+			args = append(args, kv[0], kv[1])
+		}
+	}
+	logging.Audit(context.Background(), "stack."+e.Action, args...)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if _, err := s.Audit.Record(ctx, e); err != nil {
