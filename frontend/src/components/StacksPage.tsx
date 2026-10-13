@@ -106,7 +106,7 @@ function StackRow(props: {
   const job = s.active ?? s.last;
   return (
     <section class="stack-row">
-      <SectionHead index={props.index} title={s.name}>
+      <SectionHead index={props.index} title={s.name} href={`/stacks/${s.name}`}>
         <span class="eyebrow">
           <Dot tone={stackTone(s)} />
           {s.counts.running}/{s.counts.services} running

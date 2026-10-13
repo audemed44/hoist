@@ -59,6 +59,7 @@ export function Dot(props: { tone: Tone }) {
 export function SectionHead(props: {
   index?: number;
   title: string;
+  href?: string;
   children?: ComponentChildren;
 }) {
   return (
@@ -66,7 +67,15 @@ export function SectionHead(props: {
       {props.index !== undefined && (
         <span class="section-index">{String(props.index).padStart(2, "0")}</span>
       )}
-      <h2 class="section-name">{props.title}</h2>
+      <h2 class="section-name">
+        {props.href ? (
+          <a class="section-link" href={props.href}>
+            {props.title}
+          </a>
+        ) : (
+          props.title
+        )}
+      </h2>
       <span class="spacer" />
       {props.children}
     </div>
