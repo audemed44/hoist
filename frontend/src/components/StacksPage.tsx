@@ -35,7 +35,7 @@ export function StacksPage(props: { readOnly: boolean }) {
         <div class="figures">
           <Figure
             value={running}
-            unit={`/${total}`}
+            unit={`/${total - asleep}`}
             label={asleep ? `Running · ${asleep} asleep` : "Running"}
             tone={running + asleep < total ? "warn" : ""}
           />
@@ -109,7 +109,7 @@ function StackRow(props: {
       <SectionHead index={props.index} title={s.name} href={`/stacks/${s.name}`}>
         <span class="eyebrow">
           <Dot tone={stackTone(s)} />
-          {s.counts.running}/{s.counts.services} running
+          {s.counts.running}/{s.counts.services - (s.counts.asleep ?? 0)} running
           {s.counts.asleep ? ` · ${s.counts.asleep} asleep` : ""}
         </span>
       </SectionHead>

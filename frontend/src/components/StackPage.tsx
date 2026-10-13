@@ -58,7 +58,9 @@ export function StackPage(props: { name: string; tab: Tab; readOnly: boolean }) 
             >
               <div class="figure-value">
                 {stack.counts.running}
-                <span class="figure-unit">/{stack.counts.services}</span>
+                <span class="figure-unit">
+                  /{stack.counts.services - (stack.counts.asleep ?? 0)}
+                </span>
               </div>
               <div class="eyebrow figure-label">
                 {stack.counts.asleep ? `Running · ${stack.counts.asleep} asleep` : "Running"}

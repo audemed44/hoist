@@ -77,7 +77,7 @@ func (s *Server) foyerWidget(w http.ResponseWriter, r *http.Request) {
 		}
 		item := foyerItem{
 			Title:    info.Name,
-			Subtitle: fmt.Sprintf("%d/%d running", info.Counts.Running, info.Counts.Services),
+			Subtitle: fmt.Sprintf("%d/%d running", info.Counts.Running, info.Counts.Services-info.Counts.Asleep),
 			URL:      "/stacks/" + info.Name,
 		}
 		if info.Counts.Asleep > 0 {
@@ -118,12 +118,13 @@ func (s *Server) foyerWidget(w http.ResponseWriter, r *http.Request) {
 	if running+asleep < total {
 		runTone = "warn"
 	}
+	// Asleep containers sit outside the count: Gatehouse stopped them on purpose.
 	runCaption := "containers"
 	if asleep > 0 {
 		runCaption = fmt.Sprintf("containers · %d asleep", asleep)
 	}
 	out.Stats = []foyerStat{
-		{Label: "Running", Value: strconv.Itoa(running), Unit: "/" + strconv.Itoa(total), Caption: runCaption, Tone: runTone},
+		{Label: "Running", Value: strconv.Itoa(running), Unit: "/" + strconv.Itoa(total-asleep), Caption: runCaption, Tone: runTone},
 		{Label: "To deploy", Value: strconv.Itoa(pending), Caption: "services changed", Tone: map[bool]string{true: "accent"}[pending > 0]},
 		{Label: "Updates", Value: strconv.Itoa(available), Caption: "images and versions", Tone: map[bool]string{true: "accent"}[available > 0]},
 	}
